@@ -157,7 +157,7 @@ function Menu:draw()
     -- Bottom prompt
     love.graphics.setColor(0.7, 0.7, 0.7, 0.8)
     love.graphics.setFont(self.fontSm)
-    local prompt = "← → to select     Enter / click twice to start"
+    local prompt = "A / D  or  Left / Right  to select     Enter / click twice to start"
     love.graphics.print(
         prompt,
         (SCREEN_W - self.fontSm:getWidth(prompt)) / 2,

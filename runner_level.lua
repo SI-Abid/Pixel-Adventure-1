@@ -5,9 +5,11 @@
 -- Column indices are 1-indexed throughout (matching original level.lua).
 -- Tile at 1-indexed col C: world_x = (C-1)*TILE_SIZE
 
-local Animation   = require("animation")
-local Trap        = require("trap")
-local RunnerEnemy = require("runner_enemy")
+local Animation = require("animation")
+local Trap      = require("trap")
+local Mushroom  = require("enemy_mushroom")
+local Chicken   = require("enemy_chicken")
+local Pig       = require("enemy_pig")
 
 local RunnerLevel  = {}
 RunnerLevel.__index = RunnerLevel
@@ -261,9 +263,9 @@ end
 
 function RunnerLevel:_pickEnemy()
     local d    = self.difficulty
-    local pool = { "mushroom" }
-    if d > 0.30 then pool[#pool+1] = "chicken" end
-    if d > 0.60 then pool[#pool+1] = "pig"     end
+    local pool = { Mushroom }
+    if d > 0.30 then pool[#pool+1] = Chicken end
+    if d > 0.60 then pool[#pool+1] = Pig     end
     return pool[math.random(1, #pool)]
 end
 
@@ -392,7 +394,8 @@ function RunnerLevel:_spawnChunk()
         local absCol = startCol + ec - 1
         local wx     = tileX(absCol)
         local wy     = tileY(GROUND_ROW) - 32
-        table.insert(chunk.enemies, RunnerEnemy.new(wx, wy, self:_pickEnemy()))
+        local EnemyClass = self:_pickEnemy()
+        table.insert(chunk.enemies, EnemyClass.new(wx, wy))
     end
 
     table.insert(self.activeChunks, chunk)
@@ -407,6 +410,15 @@ function RunnerLevel:update(dt, playerX)
         end
         for _, t in ipairs(chunk.traps) do
             t:update(dt)
+        end
+    end
+
+    -- Remove enemies whose hit animation has finished (isExpired = true)
+    for _, chunk in ipairs(self.activeChunks) do
+        for i = #chunk.enemies, 1, -1 do
+            if chunk.enemies[i]:isExpired() then
+                table.remove(chunk.enemies, i)
+            end
         end
     end
 
