@@ -1,116 +1,186 @@
 -- main.lua
--- Game orchestrator: wires player, enemies, level, and HUD together.
+-- Game orchestrator: menu → running → gameover state machine.
+-- Uses infinite RunnerLevel with procedural chunks.
 
-local Player = require("player")
-local Enemy  = require("enemy")
-local Level  = require("level")
+local Menu        = require("menu")
+local Player      = require("player")
+local RunnerLevel = require("runner_level")
 
 local SCALE    = 2
 local SCREEN_W = 800
 local SCREEN_H = 450
 
+-- ─── State ────────────────────────────────────────────────────────────────────
+local gameState = "menu"   -- "menu" | "running" | "gameover"
+local menu
 local player
-local enemies
 local level
-local gameOver = false
+local highScore = 0
+local lastScore = 0
+local lastDist  = 0
+
+-- ─── HUD assets ───────────────────────────────────────────────────────────────
 local fontHUD
 local fontBig
 local heartImg
 
+-- ─── Sounds ───────────────────────────────────────────────────────────────────
+local snd = {}
+
+-- ─── Helpers ──────────────────────────────────────────────────────────────────
+local function playSound(s)
+    if s then
+        s:stop()
+        s:play()
+    end
+end
+
+local function startGame(charPath)
+    level  = RunnerLevel.new()
+    player = Player.new(48, 128, charPath)
+end
+
+-- ─── Love callbacks ───────────────────────────────────────────────────────────
 function love.load()
     love.graphics.setDefaultFilter("nearest", "nearest")
-    fontHUD = love.graphics.newFont(16)
-    fontBig = love.graphics.newFont(32)
+
+    fontHUD  = love.graphics.newFont(16)
+    fontBig  = love.graphics.newFont(32)
     heartImg = love.graphics.newImage("assets/heart.png")
     heartImg:setFilter("nearest", "nearest")
 
-    level = Level.new()
+    -- Sounds
+    local function tryLoad(path, kind)
+        local ok, src = pcall(love.audio.newSource, path, kind)
+        return ok and src or nil
+    end
+    snd.jump     = tryLoad("assets/Sounds/jump.wav",          "static")
+    snd.collect  = tryLoad("assets/Sounds/collect_fruit.wav", "static")
+    snd.hit      = tryLoad("assets/Sounds/hit.wav",           "static")
+    snd.bounce   = tryLoad("assets/Sounds/bounce.wav",        "static")
+    snd.gameover = tryLoad("assets/Sounds/disappear.wav",     "static")
 
-    -- Player spawns on ground: row 11 starts at y=160, sprite is 32 tall
-    player = Player.new(32, 128)
-
-    -- Enemies: (x, y, patrolLeft, patrolRight) in world pixels
-    enemies = {
-        Enemy.new(200, 128, 128, 320),    -- patrol on ground
-        Enemy.new(400, 128, 352, 500),     -- patrol on ground
-        Enemy.new(33 * 16, 64, 32 * 16, 36 * 16),  -- patrol on platform 2
-    }
+    menu = Menu.new()
 end
 
 function love.update(dt)
-    if gameOver then return end
-
-    -- Cap dt to prevent physics tunneling
     dt = math.min(dt, 0.05)
 
-    level:update(dt)
-    player:update(dt, level)
+    if gameState == "menu" then
+        menu:update(dt)
 
-    -- Collectibles
-    local px, py, pw, ph = player:getHitbox()
-    local gained = level:checkCollectibles(px, py, pw, ph)
-    if gained > 0 then player:addScore(gained) end
+    elseif gameState == "running" then
+        level:update(dt, player.x)
+        player:update(dt, level)
 
-    -- Enemies
-    for _, enemy in ipairs(enemies) do
-        enemy:update(dt)
-        if enemy:checkCollision(px, py, pw, ph) then
-            -- If player is falling and feet are above enemy's mid-point, stomp kills enemy
-            local ex, ey = enemy:getHitbox()
-            if player.vy > 0 and (py + ph) < (ey + 14) then
-                enemy:kill()
-                player.vy = -300  -- bounce up after stomp
-                player:addScore(20)
-            else
-                player:takeDamage()
+        -- Collectibles
+        local px, py, pw, ph = player:getHitbox()
+        local gained = level:checkCollectibles(px, py, pw, ph)
+        if gained > 0 then
+            player:addScore(gained)
+            playSound(snd.collect)
+        end
+
+        -- Enemies
+        for _, enemy in ipairs(level:getEnemies()) do
+            enemy:update(dt)
+            if enemy:checkCollision(px, py, pw, ph) then
+                local _, ey = enemy:getHitbox()
+                if player.vy > 0 and (py + ph) < (ey + 14) then
+                    -- Stomp kill
+                    enemy:kill()
+                    player.vy = -300
+                    player:addScore(20)
+                    playSound(snd.bounce)
+                elseif player.hitTimer <= 0 then
+                    player:takeDamage()
+                    playSound(snd.hit)
+                end
             end
         end
-    end
 
-    -- Camera follows player
-    level:updateCamera(
-        player.x + player.bw / 2,
-        player.y + player.bh / 2,
-        SCREEN_W, SCREEN_H, SCALE
-    )
+        -- Traps
+        for _, trap in ipairs(level:getTraps()) do
+            local tx, ty, tw, th = trap:getHitbox()
+            if px < tx + tw and px + pw > tx and
+               py < ty + th and py + ph > ty then
+                if player.hitTimer <= 0 then
+                    player:takeDamage()
+                    playSound(snd.hit)
+                end
+            end
+        end
 
-    -- Fall off bottom -> lose a life and respawn
-    if player.y > level.worldH + 100 then
-        player.lives = player.lives - 1
-        player.x  = 32
-        player.y  = 128
-        player.vx = 0
-        player.vy = 0
-    end
+        -- Camera
+        level:updateCamera(
+            player.x + player.bw / 2,
+            player.y + player.bh / 2,
+            SCREEN_W, SCREEN_H, SCALE
+        )
 
-    -- Game over
-    if player.lives <= 0 then
-        gameOver = true
+        -- Fall off bottom → instant death
+        if player.y > level.worldH + 80 then
+            player.lives = 0
+        end
+
+        -- Game over
+        if player.lives <= 0 then
+            lastScore = player.score
+            lastDist  = math.floor(player.x / 16)
+            highScore = math.max(highScore, lastScore)
+            playSound(snd.gameover)
+            gameState = "gameover"
+        end
     end
 end
 
 function love.keypressed(key)
     if key == "escape" then love.event.quit() end
 
-    if gameOver and key == "r" then
-        -- Restart
-        love.load()
-        gameOver = false
+    if gameState == "menu" then
+        local chosen = menu:keypressed(key)
+        if chosen then
+            startGame(chosen)
+            gameState = "running"
+        end
+
+    elseif gameState == "running" then
+        local jumped = player:keypressed(key)
+        if jumped then playSound(snd.jump) end
+
+    elseif gameState == "gameover" then
+        if key == "r" then
+            gameState = "menu"
+            menu      = Menu.new()
+        end
+    end
+end
+
+function love.mousepressed(x, y, button)
+    if gameState == "menu" then
+        local chosen = menu:mousepressed(x, y, button)
+        if chosen then
+            startGame(chosen)
+            gameState = "running"
+        end
+    end
+end
+
+-- ─── Drawing ──────────────────────────────────────────────────────────────────
+function love.draw()
+    if gameState == "menu" then
+        menu:draw()
         return
     end
 
-    player:keypressed(key)
-end
-
-function love.draw()
-    -- World rendering (scaled + camera translated)
+    -- World (scaled + camera-translated)
     love.graphics.push()
     love.graphics.scale(SCALE, SCALE)
     love.graphics.translate(-level.camX, -level.camY)
 
     level:draw()
 
-    for _, enemy in ipairs(enemies) do
+    for _, enemy in ipairs(level:getEnemies()) do
         enemy:draw()
     end
 
@@ -118,31 +188,69 @@ function love.draw()
 
     love.graphics.pop()
 
-    -- HUD (screen space, no scale/translate)
+    -- HUD (screen space)
     drawHUD()
 end
 
 function drawHUD()
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setFont(fontHUD)
+
+    -- Score (top-left)
     love.graphics.print("Score: " .. player.score, 10, 10)
 
-    -- Draw heart icons for lives
+    -- Heart lives
     for i = 1, player.lives do
         love.graphics.draw(heartImg, 10 + (i - 1) * 20, 34, 0, 1, 1)
     end
 
-    if gameOver then
+    -- Distance (top-right)
+    local dist = math.floor(player.x / 16)
+    local dtxt = "Dist: " .. dist .. "m"
+    love.graphics.print(dtxt, SCREEN_W - fontHUD:getWidth(dtxt) - 10, 10)
+
+    -- Difficulty bar (top-right below distance)
+    if level then
+        local d = level.difficulty
+        love.graphics.setColor(0.2, 0.2, 0.2, 0.6)
+        love.graphics.rectangle("fill", SCREEN_W - 110, 32, 100, 8)
+        love.graphics.setColor(
+            0.2 + 0.8 * d,
+            0.8 - 0.6 * d,
+            0.2,
+            0.9
+        )
+        love.graphics.rectangle("fill", SCREEN_W - 110, 32, 100 * d, 8)
+        love.graphics.setColor(0.6, 0.6, 0.6, 0.5)
+        love.graphics.rectangle("line", SCREEN_W - 110, 32, 100, 8)
+        love.graphics.setColor(1, 1, 1, 1)
+    end
+
+    -- Game over overlay
+    if gameState == "gameover" then
+        -- Semi-transparent backdrop
+        love.graphics.setColor(0, 0, 0, 0.55)
+        love.graphics.rectangle("fill", 0, 0, SCREEN_W, SCREEN_H)
+
         love.graphics.setFont(fontBig)
         love.graphics.setColor(1, 0.2, 0.2, 1)
-        local text = "GAME OVER"
-        local tw = fontBig:getWidth(text)
-        love.graphics.print(text, (SCREEN_W - tw) / 2, SCREEN_H / 2 - 40)
+        local title = "GAME OVER"
+        love.graphics.print(title, (SCREEN_W - fontBig:getWidth(title)) / 2, SCREEN_H / 2 - 70)
 
         love.graphics.setFont(fontHUD)
         love.graphics.setColor(1, 1, 1, 1)
-        local sub = "Press R to restart"
-        local sw = fontHUD:getWidth(sub)
-        love.graphics.print(sub, (SCREEN_W - sw) / 2, SCREEN_H / 2 + 10)
+
+        local lines = {
+            "Score:  " .. lastScore,
+            "Dist:   " .. lastDist .. " m",
+            "Best:   " .. highScore,
+            "",
+            "Press R to return to menu",
+        }
+        local yOff = SCREEN_H / 2 - 20
+        for _, ln in ipairs(lines) do
+            love.graphics.print(ln, (SCREEN_W - fontHUD:getWidth(ln)) / 2, yOff)
+            yOff = yOff + 22
+        end
     end
 end
