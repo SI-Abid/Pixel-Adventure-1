@@ -2,7 +2,8 @@
 -- Character selection screen: 4 animated character cards.
 -- Returns the chosen character folder path via keypressed / mousepressed.
 
-local Animation = require("animation")
+local Animation    = require("src.animation")
+local CharProfiles = require("src.char_profiles")
 
 local Menu = {}
 Menu.__index = Menu
@@ -18,10 +19,10 @@ local CHARS = {
 }
 
 local CARD_W     = 150
-local CARD_H     = 190
+local CARD_H     = 210   -- taller to fit special info
 local CARD_GAP   = 20
 local CARDS_X    = (SCREEN_W - (4 * CARD_W + 3 * CARD_GAP)) / 2
-local CARDS_Y    = 160
+local CARDS_Y    = 140
 local SPRITE_SCL = 3   -- 32×32 → 96×96
 
 function Menu.new()
@@ -30,12 +31,16 @@ function Menu.new()
     self.chars    = {}
 
     for i, c in ipairs(CHARS) do
-        local img = love.graphics.newImage(c.path .. "Idle (32x32).png")
+        local img     = love.graphics.newImage(c.path .. "Idle (32x32).png")
         img:setFilter("nearest", "nearest")
+        local profile = CharProfiles[c.path] or {}
         self.chars[i] = {
-            name = c.name,
-            path = c.path,
-            anim = Animation.new(img, 32, 32, 11, 10, true),
+            name        = c.name,
+            path        = c.path,
+            anim        = Animation.new(img, 32, 32, 11, 10, true),
+            specialName = profile.specialName or "?",
+            specialDesc = profile.specialDesc or "",
+            favFruit    = (profile.favoriteFruit or ""):gsub("%.png$", ""),
         }
     end
 
@@ -150,8 +155,26 @@ function Menu:draw()
         love.graphics.print(
             c.name,
             cx + (CARD_W - self.fontSm:getWidth(c.name)) / 2,
-            cy + CARD_H - 28
+            cy + 122
         )
+
+        -- Special name (below character name)
+        local specialColor = sel and {0.5, 1, 0.5, 1} or {0.35, 0.65, 0.35, 0.8}
+        love.graphics.setColor(specialColor[1], specialColor[2], specialColor[3], specialColor[4])
+        local sn = c.specialName
+        love.graphics.print(sn, cx + (CARD_W - self.fontSm:getWidth(sn)) / 2, cy + 140)
+
+        -- Special description
+        local descColor = sel and {0.8, 0.8, 0.8, 1} or {0.4, 0.4, 0.4, 0.8}
+        love.graphics.setColor(descColor[1], descColor[2], descColor[3], descColor[4])
+        local sd = c.specialDesc
+        love.graphics.print(sd, cx + (CARD_W - self.fontSm:getWidth(sd)) / 2, cy + 157)
+
+        -- Favourite fruit label
+        local favColor = sel and {1, 0.6, 0.8, 1} or {0.5, 0.35, 0.4, 0.8}
+        love.graphics.setColor(favColor[1], favColor[2], favColor[3], favColor[4])
+        local fav = "Fav: " .. c.favFruit
+        love.graphics.print(fav, cx + (CARD_W - self.fontSm:getWidth(fav)) / 2, cy + 175)
     end
 
     -- Bottom prompt

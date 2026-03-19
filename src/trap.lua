@@ -1,7 +1,7 @@
 -- trap.lua
 -- Spike, Saw, and Fire trap classes for the infinite runner level.
 
-local Animation = require("animation")
+local Animation = require("src.animation")
 
 local Trap = {}
 Trap.__index = Trap

@@ -1,7 +1,7 @@
 -- level.lua
 -- Level class: tile map, camera, background, collectibles, collision resolution.
 
-local Animation = require("animation")
+local Animation = require("src.animation")
 
 local Level = {}
 Level.__index = Level

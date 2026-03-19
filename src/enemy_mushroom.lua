@@ -2,8 +2,8 @@
 -- Mushroom enemy: extends BaseEnemy.
 -- Uses Hit animation for death; flips sprite based on movement direction.
 
-local Animation = require("animation")
-local BaseEnemy = require("enemy_base")
+local Animation = require("src.animation")
+local BaseEnemy = require("src.enemy_base")
 
 local Mushroom = setmetatable({}, {__index = BaseEnemy})
 Mushroom.__index = Mushroom

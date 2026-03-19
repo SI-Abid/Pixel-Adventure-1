@@ -1,7 +1,7 @@
 -- enemy.lua
 -- Enemy class: Virtual Guy with patrol AI and red color tint.
 
-local Animation = require("animation")
+local Animation = require("src.animation")
 
 local Enemy = {}
 Enemy.__index = Enemy

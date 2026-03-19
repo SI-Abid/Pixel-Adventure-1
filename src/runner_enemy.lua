@@ -2,7 +2,7 @@
 -- Multi-type enemy for the infinite runner level.
 -- Enemies always walk left; stomp-to-kill mechanic; death animation.
 
-local Animation = require("animation")
+local Animation = require("src.animation")
 
 local RunnerEnemy = {}
 RunnerEnemy.__index = RunnerEnemy

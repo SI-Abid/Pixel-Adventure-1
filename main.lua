@@ -2,9 +2,9 @@
 -- Game orchestrator: menu → running → gameover state machine.
 -- Uses infinite RunnerLevel with procedural chunks.
 
-local Menu        = require("menu")
-local Player      = require("player")
-local RunnerLevel = require("runner_level")
+local Menu        = require("src.menu")
+local Player      = require("src.player")
+local RunnerLevel = require("src.runner_level")
 
 local SCALE    = 2
 local SCREEN_W = 800
@@ -75,9 +75,9 @@ function love.update(dt)
 
         -- Collectibles
         local px, py, pw, ph = player:getHitbox()
-        local gained = level:checkCollectibles(px, py, pw, ph)
-        if gained > 0 then
-            player:addScore(gained)
+        local fruits = level:checkCollectibles(px, py, pw, ph)
+        for _, f in ipairs(fruits) do
+            player:collectFruit(f.fruitType, f.value)
             playSound(snd.collect)
         end
 
@@ -90,7 +90,7 @@ function love.update(dt)
                     -- Stomp kill
                     enemy:kill()
                     player.vy = -300
-                    player:addScore(20)
+                    player:addScore(20)   -- scoreMultiplier applied inside addScore
                     playSound(snd.bounce)
                 elseif player.hitTimer <= 0 then
                     player:takeDamage()
@@ -147,6 +147,9 @@ function love.keypressed(key)
     elseif gameState == "running" then
         local jumped = player:keypressed(key)
         if jumped then playSound(snd.jump) end
+        if key == "e" or key == "f" then
+            player:activateSpecial()
+        end
 
     elseif gameState == "gameover" then
         if key == "r" then
@@ -178,7 +181,7 @@ function love.draw()
     love.graphics.scale(SCALE, SCALE)
     love.graphics.translate(-level.camX, -level.camY)
 
-    level:draw()
+    level:draw(player.lastFruitType, player.favoriteFruit)
 
     for _, enemy in ipairs(level:getEnemies()) do
         enemy:draw()
@@ -223,6 +226,66 @@ function drawHUD()
         love.graphics.rectangle("fill", SCREEN_W - 110, 32, 100 * d, 8)
         love.graphics.setColor(0.6, 0.6, 0.6, 0.5)
         love.graphics.rectangle("line", SCREEN_W - 110, 32, 100, 8)
+        love.graphics.setColor(1, 1, 1, 1)
+    end
+
+    -- ── Power Bar (bottom-centre) ──────────────────────────────────────────
+    if player then
+        local barW  = 180
+        local barH  = 12
+        local barX  = (SCREEN_W - barW) / 2
+        local barY  = SCREEN_H - 28
+        local pct   = player.powerBar / 100
+
+        -- Background track
+        love.graphics.setColor(0.15, 0.15, 0.15, 0.75)
+        love.graphics.rectangle("fill", barX, barY, barW, barH, 3, 3)
+
+        -- Fill: cyan while charging, gold when full
+        if player.powerBar >= 100 then
+            love.graphics.setColor(1, 0.85, 0.1, 1)
+        else
+            love.graphics.setColor(0.2, 0.7, 1, 0.9)
+        end
+        love.graphics.rectangle("fill", barX, barY, barW * pct, barH, 3, 3)
+
+        -- Border
+        love.graphics.setColor(0.7, 0.7, 0.7, 0.6)
+        love.graphics.rectangle("line", barX, barY, barW, barH, 3, 3)
+
+        -- Label: "POWER" on the left
+        love.graphics.setFont(fontHUD)
+        love.graphics.setColor(0.8, 0.8, 0.8, 1)
+        love.graphics.print("POWER", barX - fontHUD:getWidth("POWER") - 6, barY - 2)
+
+        -- "E: SpecialName" on the right (flashes when bar full)
+        local hint = "E: " .. player.specialName
+        if player.powerBar >= 100 then
+            local flash = math.floor(love.timer.getTime() * 4) % 2 == 0
+            love.graphics.setColor(flash and {1,0.9,0.1,1} or {1,1,1,0.5})
+        else
+            love.graphics.setColor(0.55, 0.55, 0.55, 0.8)
+        end
+        love.graphics.print(hint, barX + barW + 6, barY - 2)
+
+        -- Active special: show name + remaining time below the bar
+        if player.specialActive then
+            local activeColor = {
+                speed      = {1,   1,   0.4, 1},
+                triplejump = {0.4, 1,   0.4, 1},
+                shield     = {1,   0.7, 0.1, 1},
+                scorerush  = {1,   0.4, 1,   1},
+            }
+            local col = activeColor[player.specialType] or {1,1,1,1}
+            love.graphics.setColor(col[1], col[2], col[3], col[4])
+            local aLabel = player.specialName .. string.format("  %.1fs", player.specialTimer)
+            love.graphics.print(
+                aLabel,
+                (SCREEN_W - fontHUD:getWidth(aLabel)) / 2,
+                barY - 20
+            )
+        end
+
         love.graphics.setColor(1, 1, 1, 1)
     end
 

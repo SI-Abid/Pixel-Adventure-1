@@ -3,8 +3,8 @@
 -- Uses Hit animation (not Dying) for the death state.
 -- Sprite flips horizontally based on current movement direction.
 
-local Animation = require("animation")
-local BaseEnemy = require("enemy_base")
+local Animation = require("src.animation")
+local BaseEnemy = require("src.enemy_base")
 
 local Chicken = setmetatable({}, {__index = BaseEnemy})
 Chicken.__index = Chicken

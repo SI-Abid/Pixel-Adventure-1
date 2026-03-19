@@ -2,8 +2,8 @@
 -- AngryPig enemy: extends BaseEnemy.
 -- Uses Hit animation for death; flips sprite based on movement direction.
 
-local Animation = require("animation")
-local BaseEnemy = require("enemy_base")
+local Animation = require("src.animation")
+local BaseEnemy = require("src.enemy_base")
 
 local Pig = setmetatable({}, {__index = BaseEnemy})
 Pig.__index = Pig

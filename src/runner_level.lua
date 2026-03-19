@@ -5,11 +5,11 @@
 -- Column indices are 1-indexed throughout (matching original level.lua).
 -- Tile at 1-indexed col C: world_x = (C-1)*TILE_SIZE
 
-local Animation = require("animation")
-local Trap      = require("trap")
-local Mushroom  = require("enemy_mushroom")
-local Chicken   = require("enemy_chicken")
-local Pig       = require("enemy_pig")
+local Animation = require("src.animation")
+local Trap      = require("src.trap")
+local Mushroom  = require("src.enemy_mushroom")
+local Chicken   = require("src.enemy_chicken")
+local Pig       = require("src.enemy_pig")
 
 local RunnerLevel  = {}
 RunnerLevel.__index = RunnerLevel
@@ -31,16 +31,16 @@ local TILE_QUADS_DEF = {
 }
 local ONE_WAY_TILES = { [7] = true, [8] = true, [9] = true }
 
--- Fruit definitions: {filename, point_value, frame_count}
+-- Fruit definitions: {file, value, frames}
 local FRUIT_DEFS = {
-    { "Apple.png",      10, 17 },
-    { "Bananas.png",    10, 17 },
-    { "Cherries.png",   15, 17 },
-    { "Kiwi.png",       10, 17 },
-    { "Melon.png",      20, 17 },
-    { "Orange.png",     10, 17 },
-    { "Pineapple.png",  15, 17 },
-    { "Strawberry.png", 15, 17 },
+    { file = "Apple.png",      value = 10, frames = 17 },
+    { file = "Bananas.png",    value = 10, frames = 17 },
+    { file = "Cherries.png",   value = 15, frames = 17 },
+    { file = "Kiwi.png",       value = 10, frames = 17 },
+    { file = "Melon.png",      value = 20, frames = 17 },
+    { file = "Orange.png",     value = 10, frames = 17 },
+    { file = "Pineapple.png",  value = 15, frames = 17 },
+    { file = "Strawberry.png", value = 15, frames = 17 },
 }
 
 -- ─── Constructor ──────────────────────────────────────────────────────────────
@@ -71,9 +71,9 @@ function RunnerLevel.new()
     -- Preload fruit images
     self.fruitImgs = {}
     for i, fd in ipairs(FRUIT_DEFS) do
-        local img = love.graphics.newImage("assets/Items/Fruits/" .. fd[1])
+        local img = love.graphics.newImage("assets/Items/Fruits/" .. fd.file)
         img:setFilter("nearest", "nearest")
-        self.fruitImgs[i] = { img = img, value = fd[2], frames = fd[3] }
+        self.fruitImgs[i] = { img = img, value = fd.value, frames = fd.frames, name = fd.file }
     end
 
     -- World dimensions
@@ -201,8 +201,9 @@ function RunnerLevel:updateCamera(playerX, playerY, screenW, screenH, scale)
 end
 
 -- ─── Collectibles ─────────────────────────────────────────────────────────────
+-- Returns a list of {value, fruitType} for each fruit collected this frame.
 function RunnerLevel:checkCollectibles(px, py, pw, ph)
-    local gained = 0
+    local collected = {}
     for _, chunk in ipairs(self.activeChunks) do
         for _, c in ipairs(chunk.collectibles) do
             if not c.collected then
@@ -211,12 +212,12 @@ function RunnerLevel:checkCollectibles(px, py, pw, ph)
                 if px < cx + 20 and px + pw > cx and
                    py < cy + 20 and py + ph > cy then
                     c.collected = true
-                    gained      = gained + c.value
+                    collected[#collected + 1] = { value = c.value, fruitType = c.fruitType }
                 end
             end
         end
     end
-    return gained
+    return collected
 end
 
 -- ─── Accessors for enemies / traps ────────────────────────────────────────────
@@ -250,6 +251,7 @@ function RunnerLevel:_makeFruit(wx, wy)
         anim      = Animation.new(fd.img, 32, 32, fd.frames, 17, true),
         collected = false,
         value     = fd.value,
+        fruitType = fd.name,   -- filename e.g. "Apple.png" — used for combo tracking
     }
 end
 
@@ -358,14 +360,16 @@ function RunnerLevel:_spawnChunk()
         table.insert(chunk.collectibles, self:_makeFruit(wx, wy))
     end
 
-    -- ── Random ground fruit ───────────────────────────────────────────────────
-    if math.random() < 0.45 then
-        local fc = math.random(2, CHUNK_W - 2)
-        if not inGap(fc) then
-            local absCol = startCol + fc - 1
-            local wx     = tileX(absCol)
-            local wy     = tileY(GROUND_ROW) - 32
-            table.insert(chunk.collectibles, self:_makeFruit(wx, wy))
+    -- ── Random ground fruits (2 independent rolls) ───────────────────────────
+    for _ = 1, 2 do
+        if math.random() < 0.85 then
+            local fc = math.random(2, CHUNK_W - 2)
+            if not inGap(fc) then
+                local absCol = startCol + fc - 1
+                local wx     = tileX(absCol)
+                local wy     = tileY(GROUND_ROW) - 32
+                table.insert(chunk.collectibles, self:_makeFruit(wx, wy))
+            end
         end
     end
 
@@ -446,7 +450,9 @@ function RunnerLevel:update(dt, playerX)
 end
 
 -- ─── Draw ─────────────────────────────────────────────────────────────────────
-function RunnerLevel:draw()
+-- comboFruitType: player.lastFruitType (nil if no active combo)
+-- favFruit:       player.favoriteFruit
+function RunnerLevel:draw(comboFruitType, favFruit)
     -- Background (wrapping tile, covers current viewport)
     local bgW = self.bgImg:getWidth()
     local bgH = self.bgImg:getHeight()
@@ -489,9 +495,32 @@ function RunnerLevel:draw()
     end
 
     -- Draw collectibles
+    -- Visual rules (only add rings, never dim):
+    --   Active combo  → matching fruit: pulsing gold ring
+    --   No combo      → favourite fruit: soft pink ring
+    local t = love.timer.getTime()
+    local pulse = 0.65 + 0.35 * math.sin(t * 5)
+
     for _, chunk in ipairs(self.activeChunks) do
         for _, c in ipairs(chunk.collectibles) do
             if not c.collected then
+                local isComboMatch = comboFruitType and (c.fruitType == comboFruitType)
+                local isFav        = (c.fruitType == favFruit)
+                local cx, cy       = c.x + 16, c.y + 16
+
+                if isComboMatch then
+                    love.graphics.setColor(1, 0.85, 0.1, pulse)
+                    love.graphics.setLineWidth(1.5)
+                    love.graphics.circle("line", cx, cy, 13 + 2 * math.sin(t * 5))
+                    love.graphics.setLineWidth(1)
+                elseif isFav and not comboFruitType then
+                    love.graphics.setColor(1, 0.55, 0.85, pulse * 0.8)
+                    love.graphics.setLineWidth(1.5)
+                    love.graphics.circle("line", cx, cy, 13)
+                    love.graphics.setLineWidth(1)
+                end
+
+                love.graphics.setColor(1, 1, 1, 1)
                 c.anim:draw(c.x, c.y, 1)
             end
         end
