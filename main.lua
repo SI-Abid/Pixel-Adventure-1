@@ -27,6 +27,25 @@ local TouchInput = IS_MOBILE and require("src.touch_input") or nil
 local SCALE    = 2
 local SCREEN_W = 800
 local SCREEN_H = 450
+
+-- Off-screen canvas: all drawing happens here at 800×450, then scaled to screen.
+local gameCanvas
+
+-- Return the uniform scale and letterbox offsets for the physical display.
+local function canvasTransform()
+    local pw    = love.graphics.getWidth()
+    local ph    = love.graphics.getHeight()
+    local scale = math.min(pw / SCREEN_W, ph / SCREEN_H)
+    local ox    = math.floor((pw - SCREEN_W * scale) * 0.5)
+    local oy    = math.floor((ph - SCREEN_H * scale) * 0.5)
+    return scale, ox, oy
+end
+
+-- Translate physical pixel → logical 800×450 canvas coordinates.
+local function physToLogical(px, py)
+    local s, ox, oy = canvasTransform()
+    return (px - ox) / s, (py - oy) / s
+end
 local DEBUG    = false  -- show hitboxes; set false to disable
 
 -- ─── State ────────────────────────────────────────────────────────────────────
@@ -88,10 +107,19 @@ end
 
 -- ─── Love callbacks ───────────────────────────────────────────────────────────
 function love.load()
-    -- Borderless only on mobile; desktop keeps the title bar for window management
+    -- On mobile: go full-screen at native resolution so the canvas fills the display.
+    -- On desktop: keep the configured 800×450 window with title bar.
     if IS_MOBILE then
-        love.window.setMode(SCREEN_W, SCREEN_H, { borderless = true })
+        love.window.setMode(0, 0, {
+            fullscreen     = true,
+            fullscreentype = "desktop",
+            borderless     = true,
+        })
     end
+
+    -- Create the logical 800×450 render target.
+    gameCanvas = love.graphics.newCanvas(SCREEN_W, SCREEN_H)
+    gameCanvas:setFilter("nearest", "nearest")
 
     love.graphics.setDefaultFilter("nearest", "nearest")
 
@@ -291,6 +319,7 @@ function love.keypressed(key)
 end
 
 function love.mousepressed(x, y, button)
+    local x, y = physToLogical(x, y)  -- physical → logical 800×450
     if gameState == "mainmenu" then
         local action = mainMenu:mousepressed(x, y, button)
         if action == "start" then
@@ -399,7 +428,7 @@ local function drawWorld()
 end
 
 -- ─── Drawing ──────────────────────────────────────────────────────────────────
-function love.draw()
+local function drawScene()
     if gameState == "mainmenu" then
         mainMenu:draw()
         return
@@ -432,7 +461,22 @@ function love.draw()
     end
 end
 
+function love.draw()
+    -- Render everything into the 800×450 logical canvas.
+    love.graphics.setCanvas(gameCanvas)
+    love.graphics.clear(0, 0, 0, 1)
+    drawScene()
+    love.graphics.setCanvas()
+
+    -- Scale the canvas to the physical screen with uniform letterboxing.
+    local s, ox, oy = canvasTransform()
+    love.graphics.clear(0, 0, 0, 1)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(gameCanvas, ox, oy, 0, s, s)
+end
+
 function love.mousemoved(x, y)
+    local x, y = physToLogical(x, y)  -- physical → logical 800×450
     if gameState == "mainmenu" then
         mainMenu:mousemoved(x, y)
     elseif gameState == "options" then
@@ -446,33 +490,36 @@ end
 
 -- ─── Touch callbacks (Android / iOS) ─────────────────────────────────────────
 function love.touchpressed(id, x, y, dx, dy, pressure)
-    if not (IS_MOBILE and TouchInput) then return end
-    -- Scale from physical screen to logical 800×450 canvas
-    local sx = love.graphics.getWidth()  / SCREEN_W
-    local sy = love.graphics.getHeight() / SCREEN_H
-    local action = TouchInput.touchpressed(id, x / sx, y / sy)
-    if gameState == "running" then
-        if action == "jump" then
-            local jumped = player:keypressed("space")
-            if jumped then playSound(snd.jump) end
-        elseif action == "special" then
-            player:activateSpecial()
-        end
+    if not IS_MOBILE then return end
+    local lx, ly = physToLogical(x, y)
+
+    -- Route taps on menu screens through the mouse handler.
+    if gameState ~= "running" then
+        love.mousepressed(x, y, 1)   -- x,y already physical; mousepressed will translate
+        return
+    end
+
+    if not TouchInput then return end
+    local action = TouchInput.touchpressed(id, lx, ly)
+    if action == "jump" then
+        local jumped = player:keypressed("space")
+        if jumped then playSound(snd.jump) end
+    elseif action == "special" then
+        player:activateSpecial()
     end
 end
 
 function love.touchreleased(id, x, y, dx, dy, pressure)
     if not (IS_MOBILE and TouchInput) then return end
-    local sx = love.graphics.getWidth()  / SCREEN_W
-    local sy = love.graphics.getHeight() / SCREEN_H
-    TouchInput.touchreleased(id, x / sx, y / sy)
+    local lx, ly = physToLogical(x, y)
+    TouchInput.touchreleased(id, lx, ly)
 end
 
 function love.touchmoved(id, x, y, dx, dy, pressure)
     if not (IS_MOBILE and TouchInput) then return end
-    local sx = love.graphics.getWidth()  / SCREEN_W
-    local sy = love.graphics.getHeight() / SCREEN_H
-    TouchInput.touchmoved(id, x / sx, y / sy, dx / sx, dy / sy)
+    local lx, ly   = physToLogical(x, y)
+    local s, _, _  = canvasTransform()
+    TouchInput.touchmoved(id, lx, ly, dx / s, dy / s)
 end
 
 function drawHUD()
