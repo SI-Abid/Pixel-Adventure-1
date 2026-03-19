@@ -7,6 +7,7 @@
 
 local Animation = require("src.animation")
 local Trap      = require("src.trap")
+local FireTrap  = require("src.trap_fire")
 local Mushroom  = require("src.enemy_mushroom")
 local Chicken   = require("src.enemy_chicken")
 local Pig       = require("src.enemy_pig")
@@ -273,13 +274,13 @@ end
 
 function RunnerLevel:_spawnChunk()
     self.chunkCount = self.chunkCount + 1
-    self.difficulty = math.min(1.0, math.max(0, (self.chunkCount - 3) / 40))
+    self.difficulty = 1.0   -- TEST: max difficulty from the start
 
     local startCol     = self.nextStartCol
     self.nextStartCol  = startCol + CHUNK_W
 
     local d    = self.difficulty
-    local safe = (self.chunkCount <= 2)
+    local safe = (self.chunkCount <= 1)   -- TEST: safe zone shrunk to 1 chunk
 
     local chunk = {
         startCol     = startCol,
@@ -393,41 +394,52 @@ function RunnerLevel:_spawnChunk()
     local TRAP_TILE_SPAN = { spike = 1, fire = 1, saw = 3 }
 
     if not safe and math.random() < 0.12 + 0.30 * d then
-        local tc    = math.random(2, CHUNK_W - 2)
         local ttype = self:_pickTrap()
         local span  = TRAP_TILE_SPAN[ttype] or 1
 
-        -- Check every column the sprite would cover
-        local canPlace = not inGap(tc)
-        for i = 0, span - 1 do
-            if usedGroundCols[tc + i] then canPlace = false break end
+        -- Pick saw config once (shared across all saws in this batch)
+        local saw_axis, saw_range
+        if ttype == "saw" then
+            saw_range = math.floor((32 + d * 64) / 8) * 8
+            saw_axis  = (math.random() < 0.5) and "h" or "v"
         end
 
-        if canPlace then
-            for i = 0, span - 1 do usedGroundCols[tc + i] = true end
-            local absCol = startCol + tc - 1
-            local wx     = tileX(absCol)
-            local wy
-            local saw_axis, saw_range
+        -- Place 1–3 of the same trap type; saws capped at 1 due to their width.
+        -- Count is not scaled by difficulty — it is always random.
+        local count = (ttype == "saw") and 1 or math.random(3, 8)
 
-            if ttype == "saw" then
-                -- Range scales 32→96 px with difficulty, snapped to 8 px (chain-tile size)
-                saw_range = math.floor((32 + d * 64) / 8) * 8
-                saw_axis  = (math.random() < 0.5) and "h" or "v"
+        for _ = 1, count do
+            -- Try up to 6 random columns to find a free spot
+            for attempt = 1, 6 do
+                local tc = math.random(2, CHUNK_W - span - 1)
+
+                local canPlace = not inGap(tc)
+                for i = 0, span - 1 do
+                    if usedGroundCols[tc + i] then canPlace = false break end
+                end
+
+                if canPlace then
+                    for i = 0, span - 1 do usedGroundCols[tc + i] = true end
+                    local absCol = startCol + tc - 1
+                    local wx     = tileX(absCol)
+                    local wy
+
+                    if ttype == "spike" then
+                        wy = tileY(GROUND_ROW) - 16
+                        table.insert(chunk.traps, Trap.new(ttype, wx, wy))
+                    elseif ttype == "fire" then
+                        wy = tileY(GROUND_ROW) - 32
+                        table.insert(chunk.traps, FireTrap.new(wx, wy))
+                    elseif saw_axis == "v" then
+                        wy = tileY(GROUND_ROW) / 2 - 19
+                        table.insert(chunk.traps, Trap.new(ttype, wx, wy, saw_axis, saw_range))
+                    else
+                        wy = tileY(GROUND_ROW) - 38
+                        table.insert(chunk.traps, Trap.new(ttype, wx, wy, saw_axis, saw_range))
+                    end
+                    break
+                end
             end
-
-            if ttype == "spike" then
-                wy = tileY(GROUND_ROW) - 16
-            elseif ttype == "fire" then
-                wy = tileY(GROUND_ROW) - 32
-            elseif saw_axis == "v" then
-                -- Centre the vertical saw at mid-air height; cy = ground_top/2
-                wy = tileY(GROUND_ROW) / 2 - 19
-            else  -- saw horizontal
-                wy = tileY(GROUND_ROW) - 38
-            end
-
-            table.insert(chunk.traps, Trap.new(ttype, wx, wy, saw_axis, saw_range))
         end
     end
 

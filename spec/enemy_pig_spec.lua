@@ -44,6 +44,16 @@ local function make_level()
     }
 end
 
+-- No ground anywhere — _checkGapAhead always returns true (gap ahead)
+local function gap_level()
+    return {
+        worldToCol = function(self, x) return math.floor(x / 16) end,
+        worldToRow = function(self, y) return math.floor(y / 16) end,
+        isSolid    = function(self, col, row) return false end,
+        isOneWay   = function(self, col, row) return false end,
+    }
+end
+
 -- Solid ground everywhere — _checkGapAhead always returns false (no gap)
 local function solid_level()
     return {
@@ -128,8 +138,8 @@ describe("EnemyPig Hit1 → Run transition", function()
 
     local function run_pig(player_x)
         local pig = Pig.new(100, 100)
-        pig:kill()                           -- Walk → Hit1
-        pig:update(1.0, make_level(), player_x or 200)  -- blast past 0.5 s → Run
+        pig:kill()                                          -- Walk → Hit1
+        pig:update(1.0, solid_level(), player_x or 2000)   -- blast past 0.5 s → Run
         return pig
     end
 
@@ -168,9 +178,9 @@ describe("EnemyPig second stomp", function()
 
     local function twice_stomped_pig()
         local pig = Pig.new(100, 100)
-        pig:kill()                           -- Walk → Hit1
-        pig:update(1.0, make_level(), 200)   -- → Run
-        pig:kill()                           -- Run → Hit2
+        pig:kill()                                -- Walk → Hit1
+        pig:update(1.0, solid_level(), 2000)      -- → Run
+        pig:kill()                                -- Run → Hit2
         return pig
     end
 
@@ -197,9 +207,9 @@ describe("EnemyPig Hit2 → Dead transition", function()
     local function dead_pig()
         local pig = Pig.new(100, 100)
         pig:kill()
-        pig:update(1.0, make_level(), 200)   -- → Run
-        pig:kill()                           -- → Hit2
-        pig:update(1.0, make_level(), 200)   -- → Dead
+        pig:update(1.0, solid_level(), 2000)   -- → Run
+        pig:kill()                             -- → Hit2
+        pig:update(1.0, solid_level(), 2000)   -- → Dead
         return pig
     end
 
@@ -238,15 +248,15 @@ describe("EnemyPig run speed is faster than walk speed", function()
         -- Walk: update for 0.5 s from a fixed position (solid ground), measure dx
         local walk_pig = Pig.new(500, 100)
         local wx0 = walk_pig.x
-        walk_pig:update(0.5, solid_level(), 500)   -- Walk state, patrol
+        walk_pig:update(0.5, solid_level(), 500)      -- Walk state, patrol
         local walk_dx = math.abs(walk_pig.x - wx0)
 
-        -- Run: get pig into Run state then measure dx over same dt
+        -- Run: get pig into Run state then measure dx over same dt (same Y)
         local run_pig = Pig.new(100, 100)
         run_pig:kill()
-        run_pig:update(1.0, solid_level(), 300)    -- → Run
+        run_pig:update(1.0, solid_level(), 2000, 100)  -- → Run
         local rx0 = run_pig.x
-        run_pig:update(0.5, solid_level(), 300)
+        run_pig:update(0.5, solid_level(), 2000, 100)
         local run_dx = math.abs(run_pig.x - rx0)
 
         assert.is_true(run_dx > walk_dx,
@@ -257,33 +267,32 @@ end)
 
 -- ─── Gap detection in Run state ───────────────────────────────────────────────
 
-describe("EnemyPig stops at gap edge in Run state", function()
+describe("EnemyPig reverts to Walk (not freeze) on gap edge during Run", function()
 
-    -- A level that always reports a gap ahead (no solid ground anywhere)
-    local function gap_level()
-        return {
-            worldToCol = function(self, x) return math.floor(x / 16) end,
-            worldToRow = function(self, y) return math.floor(y / 16) end,
-            isSolid    = function(self, col, row) return false end,
-            isOneWay   = function(self, col, row) return false end,
-        }
+    local function pig_about_to_hit_gap()
+        -- Get pig into Run on solid ground, then test gap on next update
+        local pig = Pig.new(100, 100)
+        pig:kill()
+        pig:update(1.0, solid_level(), 2000, 100)   -- → Run, same Y
+        return pig
     end
 
-    it("vx is 0 when gap is ahead while chasing", function()
-        local pig = Pig.new(100, 100)
-        pig:kill()
-        pig:update(1.0, gap_level(), 300)    -- → Run
-        -- One more update with a gap level: should freeze
-        pig:update(0.016, gap_level(), 300)
-        assert.are.equal(0, pig.vx)
+    it("sm.state reverts to Walk when gap is ahead while chasing", function()
+        local pig = pig_about_to_hit_gap()
+        pig:update(0.016, gap_level(), 2000, 100)
+        assert.are.equal("Walk", pig.sm.state)
     end)
 
-    it("pig does not move horizontally when gap is ahead in Run", function()
-        local pig = Pig.new(100, 100)
-        pig:kill()
-        pig:update(1.0, gap_level(), 300)    -- → Run
+    it("vx resets to patrol speed (not 0) when gap is detected", function()
+        local pig = pig_about_to_hit_gap()
+        pig:update(0.016, gap_level(), 2000, 100)
+        assert.are.equal(pig.speed, math.abs(pig.vx))
+    end)
+
+    it("pig does not move into the gap on the revert frame", function()
+        local pig = pig_about_to_hit_gap()
         local x_before = pig.x
-        pig:update(0.1, gap_level(), 300)    -- gap → vx=0 → no movement
+        pig:update(0.016, gap_level(), 2000, 100)
         assert.are.equal(x_before, pig.x)
     end)
 
@@ -305,15 +314,47 @@ describe("EnemyPig animation state tracking", function()
         assert.are.equal("Hit1", pig.last_sm_state)
     end)
 
-    it("Walk animation resets when re-entering Walk (via new pig update)", function()
-        -- Advance Walk anim a bit, verify reset field is accessible
+    it("Run animation is reset on entry; Walk frame is untouched", function()
         local pig = Pig.new(100, 100)
         pig.anims.Walk.currentFrame = 5
-        pig:kill()                            -- → Hit1
-        pig:update(1.0, make_level(), 200)    -- → Run
-        -- anims.Walk should remain untouched (no reset on non-active state)
-        -- The active anim (Run) gets reset on first entry
+        pig:kill()                                        -- → Hit1
+        pig:update(1.0, solid_level(), 2000, 100)         -- → Run
+        -- Run was just entered; Walk anim was not reset
         assert.are.equal("Run", pig.sm.state)
+        assert.are.equal(5, pig.anims.Walk.currentFrame)  -- untouched
+    end)
+
+end)
+
+-- ─── Gap during Run: revert to Walk instead of freezing ──────────────────────
+
+describe("EnemyPig reverts to Walk on gap edge during Run", function()
+
+    local function chasing_pig_at_gap()
+        local pig = Pig.new(100, 100)
+        pig:kill()
+        pig:update(1.0, solid_level(), 2000, 100)   -- → Run (same Y, solid ground)
+        return pig
+    end
+
+    it("sm.state reverts to Walk when a gap is detected during Run", function()
+        local pig = chasing_pig_at_gap()
+        pig:update(0.016, gap_level(), 2000, 100)
+        assert.are.equal("Walk", pig.sm.state)
+    end)
+
+    it("vx is reset to patrol speed when reverting due to gap", function()
+        local pig = chasing_pig_at_gap()
+        pig:update(0.016, gap_level(), 2000, 100)
+        assert.are.equal(pig.speed, math.abs(pig.vx))
+    end)
+
+    it("pig does not move into the gap on the revert frame", function()
+        local pig = chasing_pig_at_gap()
+        local x_before = pig.x
+        pig:update(0.016, gap_level(), 2000, 100)
+        -- No x movement on the frame that triggers the revert
+        assert.are.equal(x_before, pig.x)
     end)
 
 end)

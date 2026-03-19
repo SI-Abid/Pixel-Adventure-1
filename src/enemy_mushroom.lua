@@ -14,10 +14,10 @@ local CFG = {
     runFile      = "Run (32x32).png",  runFrames  = 16, runFps  = 12,
     hitFile      = "Hit.png",          hitFrames  =  5, hitFps  = 10,
     fw = 32, fh = 32,
-    bx =  6, by = 2, bw = 20, bh = 28,
+    bx =  3, by = 12, bw = 26, bh = 18,
     speed        = 60,
     color        = {1, 1, 1, 1},
-    turnDuration = 1.2,
+    turnDuration = 1.5,
 }
 
 -- Lazy-loaded images shared across all Mushroom instances
@@ -59,7 +59,11 @@ function Mushroom:update(dt, level)
             self.dying = false   -- isExpired() returns true; level will remove us
         end
     elseif self.alive then
-        self.anims.run:update(dt)
+        if self.turning then
+            self.anims.idle:update(dt)
+        else
+            self.anims.run:update(dt)
+        end
     end
 end
 
@@ -75,6 +79,8 @@ function Mushroom:draw()
     local scaleX = (self.dir < 0) and -1 or 1
     if self.dying then
         self.anims.hit:draw(self.x, self.y, scaleX)
+    elseif self.turning then
+        self.anims.idle:draw(self.x, self.y, scaleX)
     else
         self.anims.run:draw(self.x, self.y, scaleX)
     end

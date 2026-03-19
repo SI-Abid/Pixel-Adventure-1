@@ -1,7 +1,13 @@
--- trap.lua
--- Spike, Saw, and Fire trap classes for the infinite runner level.
+-- src/trap.lua
+-- Spike and Saw trap classes for the infinite runner level.
+-- Fire trap lives in src/trap_fire.lua.
 --
--- Saw traps oscillate on a chain track using src/saw_logic.lua.
+-- All trap types share the same interface:
+--   :update(dt)            advance state / animation
+--   :draw()                render
+--   :getHitbox()           returns x, y, w, h
+--   :trigger()             player-touch callback (no-op here; used by FireTrap)
+--   :isActive()            whether the trap can damage (always true here)
 
 local Animation = require("src.animation")
 local SawLogic  = require("src.saw_logic")
@@ -20,26 +26,20 @@ local function loadImg(path)
     return _imgs[path]
 end
 
--- Trap configs
+-- Trap configs (spike and saw only)
 local CONFIGS = {
     spike = {
-        imgPath  = "assets/Traps/Spikes/Idle.png",
+        imgPath = "assets/Traps/Spikes/Idle.png",
         fw = 16, fh = 16, frames = 1, fps = 1, loops = true,
         bx = 1, by = 4, bw = 14, bh = 12,
     },
     saw = {
-        imgPath      = "assets/Traps/Saw/On (38x38).png",
-        chainPath    = "assets/Traps/Saw/Chain.png",
+        imgPath   = "assets/Traps/Saw/On (38x38).png",
+        chainPath = "assets/Traps/Saw/Chain.png",
         fw = 38, fh = 38, frames = 8, fps = 14, loops = true,
         bx = 5, by = 5, bw = 28, bh = 28,
-        -- Oscillation parameters
         range = 64,   -- total travel in pixels (saw moves ±32 from centre)
-        speed = 0.8,  -- oscillations per second
-    },
-    fire = {
-        imgPath  = "assets/Traps/Fire/On (16x32).png",
-        fw = 16, fh = 32, frames = 3, fps = 8, loops = true,
-        bx = 2, by = 8, bw = 12, bh = 24,
+        speed = 0.3,  -- oscillations per second
     },
 }
 
@@ -65,12 +65,10 @@ function Trap.new(trapType, x, y, axis, range)
     self.anim = Animation.new(img, cfg.fw, cfg.fh, cfg.frames, cfg.fps, cfg.loops)
 
     if trapType == "saw" then
-        -- Spawn x,y is the top-left of the 38×38 sprite; centre is (x+19, y+19)
         local cx = x + cfg.fw / 2
         local cy = y + cfg.fh / 2
         self.saw       = SawLogic.new(cx, cy, range or cfg.range, cfg.speed, axis or "h")
         self.chain_img = loadImg(cfg.chainPath)
-        -- x/y stored only for non-saw traps; saw always derives position from sl
     else
         self.x = x
         self.y = y
@@ -78,6 +76,14 @@ function Trap.new(trapType, x, y, axis, range)
 
     return self
 end
+
+-- ─── Shared interface (trigger / isActive) ────────────────────────────────────
+
+-- Spike and saw are always armed — trigger is a no-op.
+function Trap:trigger() end
+
+-- Spike and saw always damage on contact.
+function Trap:isActive() return true end
 
 -- ─── Hitbox ───────────────────────────────────────────────────────────────────
 
@@ -109,12 +115,10 @@ function Trap:draw()
         local sl   = self.saw
         local cx   = sl.cx
         local cy   = sl.cy
-        local half = sl.range / 2
 
-        -- Draw chain tiles spanning the full travel range (+1 tile each end)
         local chain_count = math.ceil(sl.range / CHAIN_TILE) + 2
         local chain_w     = chain_count * CHAIN_TILE
-        local chain_y     = cy - CHAIN_TILE / 2   -- vertically centred on cy
+        local chain_y     = cy - CHAIN_TILE / 2
 
         if sl.axis == "h" then
             local chain_x = cx - chain_w / 2
@@ -122,7 +126,6 @@ function Trap:draw()
                 love.graphics.draw(self.chain_img, chain_x + i * CHAIN_TILE, chain_y)
             end
         else
-            -- Vertical chain
             local chain_x   = cx - CHAIN_TILE / 2
             local chain_h   = chain_count * CHAIN_TILE
             local chain_top = cy - chain_h / 2
@@ -131,7 +134,6 @@ function Trap:draw()
             end
         end
 
-        -- Draw spinning saw blade on top of chain
         local sx, sy = SawLogic.get_pos(sl)
         self.anim:draw(sx - self.fw / 2, sy - self.fh / 2, 1)
     else

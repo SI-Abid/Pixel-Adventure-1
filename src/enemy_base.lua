@@ -36,7 +36,7 @@ function BaseEnemy.new(cfg, x, y)
     -- Patrol turnaround state
     self.turning      = false
     self.turnTimer    = 0
-    self.TURN_DURATION = cfg.turnDuration or 1.2  -- configurable per enemy type
+    self.TURN_DURATION = cfg.turnDuration or 1.5  -- idle pause before flipping direction
 
     return self
 end
@@ -96,9 +96,11 @@ function BaseEnemy:update(dt, level)
     if self.dying then return end  -- body stays in place; subclass plays hit anim
     if not self.alive then return end
 
-    -- Patrol: count down the reverse-walk timer, then snap back
+    -- Patrol: idle pause before changing direction.
     -- dir=1 → left (vx=-speed), dir=-1 → right (vx=+speed): vx = -dir * speed
     if self.turning then
+        -- Stand still and play idle; flip direction when the pause expires.
+        self.vx        = 0
         self.turnTimer = self.turnTimer - dt
         if self.turnTimer <= 0 then
             self.turning = false
@@ -106,10 +108,9 @@ function BaseEnemy:update(dt, level)
             self.vx      = -self.dir * self.speed
         end
     else
-        -- Gap ahead → reverse direction and start timer
+        -- Gap ahead → stop, wait TURN_DURATION, then flip direction.
         if level and self:_checkGapAhead(level) then
-            self.dir       = -self.dir
-            self.vx        = -self.dir * self.speed
+            self.vx        = 0
             self.turning   = true
             self.turnTimer = self.TURN_DURATION
         end

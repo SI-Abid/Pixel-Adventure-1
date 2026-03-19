@@ -15,10 +15,10 @@ local CFG = {
     runFile      = "Run (32x34).png",  runFrames  = 14, runFps  = 12,
     hitFile      = "Hit (32x34).png",  hitFrames  =  5, hitFps  = 10,
     fw = 32, fh = 34,
-    bx =  6, by = 4, bw = 20, bh = 26,
+    bx =  2, by = 1, bw = 28, bh = 32,
     speed        = 75,
     color        = {1, 1, 1, 1},
-    turnDuration = 1.0,
+    turnDuration = 1.5,
 }
 
 -- Lazy-loaded images shared across all Chicken instances
@@ -60,7 +60,11 @@ function Chicken:update(dt, level)
             self.dying = false   -- isExpired() returns true; level will remove us
         end
     elseif self.alive then
-        self.anims.run:update(dt)
+        if self.turning then
+            self.anims.idle:update(dt)
+        else
+            self.anims.run:update(dt)
+        end
     end
 end
 
@@ -76,6 +80,8 @@ function Chicken:draw()
     local scaleX = (self.dir < 0) and -1 or 1
     if self.dying then
         self.anims.hit:draw(self.x, self.y, scaleX)
+    elseif self.turning then
+        self.anims.idle:draw(self.x, self.y, scaleX)
     else
         self.anims.run:draw(self.x, self.y, scaleX)
     end

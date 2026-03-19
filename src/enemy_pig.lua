@@ -9,6 +9,10 @@ local PigSM     = require("src.pig")
 local Pig = setmetatable({}, {__index = BaseEnemy})
 Pig.__index = Pig
 
+-- Grace period after entering Run before gap checks can trigger stop_chase.
+-- Prevents instant Walk reversion when the pig enters Run near a gap.
+local MIN_RUN_TIME = 0.25      -- seconds
+
 local CFG = {
     folder       = "assets/Enemies/AngryPig/",
     idleFile     = "Walk (36x30).png",    idleFrames = 16, idleFps = 10,
@@ -16,7 +20,7 @@ local CFG = {
     hit1File     = "Hit 1 (36x30).png",  hit1Frames =  5, hit1Fps = 10,
     hit2File     = "Hit 2 (36x30).png",  hit2Frames =  5, hit2Fps = 10,
     fw = 36, fh = 30,
-    bx =  6, by = 2, bw = 24, bh = 24,
+    bx =  3, by = 1, bw = 30, bh = 27,
     speed        = 80,    -- Walk patrol speed
     run_speed    = 200,   -- Run (chase) speed — noticeably faster than Walk
     color        = {1, 0.8, 0.8, 1},
@@ -47,8 +51,10 @@ function Pig.new(x, y)
 
     self.sm             = PigSM.new()
     self.last_player_x  = x
+    self.last_player_y  = y
     self.last_sm_state  = "Walk"
     self.run_speed      = CFG.run_speed
+    self.run_enter_timer = 0   -- time spent in Run state this cycle
 
     -- Animations keyed by state name
     self.anims = {
@@ -62,12 +68,11 @@ end
 
 -- ─── Update ───────────────────────────────────────────────────────────────────
 
--- player_x is an optional third argument passed by main.lua (enemy:update(dt, level, player.x)).
--- Other enemy types ignore it; Lua silently discards extra arguments.
-function Pig:update(dt, level, player_x)
-    if player_x then
-        self.last_player_x = player_x
-    end
+-- player_x/player_y are optional args from main.lua (enemy:update(dt, level, player.x, player.y)).
+-- Other enemy types ignore them; Lua silently discards extra arguments.
+function Pig:update(dt, level, player_x, player_y)
+    if player_x then self.last_player_x = player_x end
+    if player_y then self.last_player_y = player_y end
 
     -- Drive the state machine (handles Hit1/Hit2 timers, transitions)
     PigSM.update(self.sm, dt, self.last_player_x)
@@ -79,6 +84,8 @@ function Pig:update(dt, level, player_x)
         local anim = self.anims[state]
         if anim then anim:reset() end
         self.last_sm_state = state
+        -- Reset the grace-period timer whenever we (re)enter Run
+        if state == "Run" then self.run_enter_timer = 0 end
     end
 
     -- Per-state movement and animation
@@ -91,6 +98,8 @@ function Pig:update(dt, level, player_x)
         self.anims.Hit1:update(dt)
 
     elseif state == "Run" then
+        self.run_enter_timer = self.run_enter_timer + dt
+
         local pig_center = self.x + self.bx + self.bw / 2
         if self.last_player_x > pig_center then
             self.vx  = self.run_speed
@@ -99,11 +108,15 @@ function Pig:update(dt, level, player_x)
             self.vx  = -self.run_speed
             self.dir = 1    -- facing left (no flip)
         end
-        -- Stop at ledge edges instead of running into the void
-        if level and self:_checkGapAhead(level) then
-            self.vx = 0
+
+        -- Only apply gap check after the grace period expires.
+        -- This prevents instant Walk reversion on the first Run frame near a gap.
+        if self.run_enter_timer >= MIN_RUN_TIME and level and self:_checkGapAhead(level) then
+            PigSM.stop_chase(self.sm)
+            self.vx = -self.dir * self.speed   -- drop back to patrol speed
+        else
+            self.x = self.x + self.vx * dt
         end
-        self.x = self.x + self.vx * dt
         self.anims.Run:update(dt)
 
     elseif state == "Hit2" then

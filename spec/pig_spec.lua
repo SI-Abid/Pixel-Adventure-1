@@ -171,6 +171,52 @@ describe("Pig.update in 'Run'", function()
 
 end)
 
+-- ─── Pig.stop_chase ───────────────────────────────────────────────────────────
+describe("Pig.stop_chase", function()
+
+    local function runPig()
+        local pig = Pig.new()
+        Pig.take_damage(pig)
+        Pig.update(pig, 1.0, 200)   -- → Run
+        return pig
+    end
+
+    it("transitions Run → Walk", function()
+        local pig = runPig()
+        Pig.stop_chase(pig)
+        assert.are.equal("Walk", pig.state)
+    end)
+
+    it("resets state_timer to 0", function()
+        local pig = runPig()
+        pig.state_timer = 9.9
+        Pig.stop_chase(pig)
+        assert.are.equal(0, pig.state_timer)
+    end)
+
+    it("is a no-op in Walk state", function()
+        local pig = Pig.new()
+        Pig.stop_chase(pig)
+        assert.are.equal("Walk", pig.state)
+    end)
+
+    it("is a no-op in Hit1 state", function()
+        local pig = Pig.new()
+        Pig.take_damage(pig)
+        Pig.stop_chase(pig)
+        assert.are.equal("Hit1", pig.state)
+    end)
+
+    it("is a no-op in Dead state", function()
+        local pig = Pig.new()
+        Pig.take_damage(pig) Pig.update(pig, 1.0, 0)
+        Pig.take_damage(pig) Pig.update(pig, 1.0, 0)
+        Pig.stop_chase(pig)
+        assert.are.equal("Dead", pig.state)
+    end)
+
+end)
+
 -- ─── Pig.update — Hit2 ────────────────────────────────────────────────────────
 describe("Pig.update in 'Hit2'", function()
 

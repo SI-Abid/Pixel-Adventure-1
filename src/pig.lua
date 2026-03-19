@@ -47,6 +47,17 @@ function Pig.take_damage(pig)
     -- hits_taken >= 2 (Dead): ignore further damage
 end
 
+--- Revert from Run back to Walk patrol.
+--- Called by the rendering layer when chase conditions fail (Y-level mismatch or gap).
+--- No-op in any other state.
+--- @param pig table
+function Pig.stop_chase(pig)
+    if pig.state == "Run" then
+        pig.state       = "Walk"
+        pig.state_timer = 0
+    end
+end
+
 --- Advance the pig's state machine by dt seconds.
 --- @param pig      table   Pig entity from Pig.new()
 --- @param dt       number  Delta time in seconds

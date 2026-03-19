@@ -1,6 +1,16 @@
 -- main.lua
 -- Game orchestrator: menu → running → gameover state machine.
 -- Uses infinite RunnerLevel with procedural chunks.
+--
+-- Pass --test on the command line to open the visual test window instead:
+--   love . --test
+
+for _, v in ipairs(arg or {}) do
+    if v == "--test" then
+        require("test")
+        return
+    end
+end
 
 local Menu        = require("src.menu")
 local Player      = require("src.player")
@@ -9,6 +19,7 @@ local RunnerLevel = require("src.runner_level")
 local SCALE    = 2
 local SCREEN_W = 800
 local SCREEN_H = 450
+local DEBUG    = true   -- show hitboxes; set false to disable
 
 -- ─── State ────────────────────────────────────────────────────────────────────
 local gameState = "menu"   -- "menu" | "running" | "gameover"
@@ -83,7 +94,7 @@ function love.update(dt)
 
         -- Enemies
         for _, enemy in ipairs(level:getEnemies()) do
-            enemy:update(dt, level, player.x)
+            enemy:update(dt, level, player.x, player.y)
             if enemy:checkCollision(px, py, pw, ph) then
                 local _, ey = enemy:getHitbox()
                 if player.vy > 0 and (py + ph) < (ey + 14) then
@@ -104,7 +115,8 @@ function love.update(dt)
             local tx, ty, tw, th = trap:getHitbox()
             if px < tx + tw and px + pw > tx and
                py < ty + th and py + ph > ty then
-                if player.hitTimer <= 0 then
+                trap:trigger()   -- ignites fire on first touch; no-op for others
+                if trap:isActive() and player.hitTimer <= 0 then
                     player:takeDamage()
                     playSound(snd.hit)
                 end
@@ -185,6 +197,12 @@ function love.draw()
 
     for _, enemy in ipairs(level:getEnemies()) do
         enemy:draw()
+        if DEBUG then
+            local ex, ey, ew, eh = enemy:getHitbox()
+            love.graphics.setColor(1, 0, 0, 0.7)
+            love.graphics.rectangle("line", ex, ey, ew, eh)
+            love.graphics.setColor(1, 1, 1, 1)
+        end
     end
 
     player:draw()
