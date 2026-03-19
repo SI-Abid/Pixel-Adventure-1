@@ -18,7 +18,9 @@ local CFG = {
     hitFile   = "Hit (16x32).png",  hitFrames = 4, hitFps = 12,
     onFile    = "On (16x32).png",   onFrames  = 3, onFps  =  8,
     fw = 16, fh = 32,
-    bx = 2, by = 8, bw = 12, bh = 24,
+    -- Hitbox covers only the flame portion (top 16px of sprite).
+    -- The base (bottom 16px) sits at floor level and is walkable via ground tiles.
+    bx = 2, by = 0, bw = 12, bh = 16,
 }
 
 local _imgs = {}
