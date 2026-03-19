@@ -1,3 +1,10 @@
 .aider*
+.superpowers/
 .vscode/settings.json
 CLAUDE.md
+
+# Build outputs
+dist/.tools/
+dist/*.love
+dist/linux/
+dist/android/

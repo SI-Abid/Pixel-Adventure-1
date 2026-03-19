@@ -12,10 +12,17 @@ for _, v in ipairs(arg or {}) do
     end
 end
 
-local Menu        = require("src.menu")
-local Player      = require("src.player")
-local RunnerLevel = require("src.runner_level")
-local PauseMenu   = require("src.pause_menu")
+local MainMenu         = require("src.main_menu")
+local OptionsMenu      = require("src.options_menu")
+local Menu             = require("src.menu")
+local Player           = require("src.player")
+local RunnerLevel      = require("src.runner_level")
+local PauseMenu        = require("src.pause_menu")
+local HighScores       = require("src.highscores")
+local HighScoresScreen = require("src.highscores_screen")
+
+local IS_MOBILE  = love.system.getOS() == "Android" or love.system.getOS() == "iOS"
+local TouchInput = IS_MOBILE and require("src.touch_input") or nil
 
 local SCALE    = 2
 local SCREEN_W = 800
@@ -23,14 +30,20 @@ local SCREEN_H = 450
 local DEBUG    = false  -- show hitboxes; set false to disable
 
 -- ─── State ────────────────────────────────────────────────────────────────────
-local gameState = "menu"   -- "menu" | "running" | "paused" | "gameover"
+-- States: "mainmenu" | "menu" | "options" | "highscores" | "running" | "paused" | "gameover"
+local gameState        = "mainmenu"
+local mainMenu
+local optionsMenu
 local menu
 local player
 local level
 local pauseMenu
-local highScore = 0
-local lastScore = 0
-local lastDist  = 0
+local highscoresScreen
+local highScore    = 0
+local lastScore    = 0
+local lastDist     = 0
+local musicEnabled = true
+local lastCharPath = "assets/Main Characters/Mask Dude/"  -- default character
 
 -- ─── HUD assets ───────────────────────────────────────────────────────────────
 local fontHUD
@@ -68,10 +81,18 @@ local function startGame(charPath)
     level     = RunnerLevel.new()
     player    = Player.new(48, 128, charPath)
     pauseMenu = PauseMenu.new(soundEnabled)
+    if IS_MOBILE and TouchInput then
+        Player.setTouchInput(TouchInput.state)
+    end
 end
 
 -- ─── Love callbacks ───────────────────────────────────────────────────────────
 function love.load()
+    -- Borderless only on mobile; desktop keeps the title bar for window management
+    if IS_MOBILE then
+        love.window.setMode(SCREEN_W, SCREEN_H, { borderless = true })
+    end
+
     love.graphics.setDefaultFilter("nearest", "nearest")
 
     fontHUD  = love.graphics.newFont(16)
@@ -93,14 +114,26 @@ function love.load()
     snd.bounce   = tryLoad("assets/Sounds/bounce.wav",        "static")
     snd.gameover = tryLoad("assets/Sounds/disappear.wav",     "static")
 
-    menu = Menu.new()
+    HighScores.init()
+
+    mainMenu = MainMenu.new()
+    menu     = Menu.new()
 end
 
 function love.update(dt)
     dt = math.min(dt, 0.05)
 
-    if gameState == "menu" then
+    if gameState == "mainmenu" then
+        mainMenu:update(dt)
+
+    elseif gameState == "menu" then
         menu:update(dt)
+
+    elseif gameState == "options" then
+        -- static screen, nothing to update
+
+    elseif gameState == "highscores" then
+        highscoresScreen:update(dt)
 
     elseif gameState == "paused" then
         -- world frozen; nothing to update
@@ -170,6 +203,7 @@ function love.update(dt)
             lastScore = player.score
             lastDist  = math.floor(player.x / 16)
             highScore = math.max(highScore, lastScore)
+            HighScores.addScore(lastScore, lastDist, lastCharPath)
             playSound(snd.gameover)
             gameState = "gameover"
         end
@@ -177,11 +211,51 @@ function love.update(dt)
 end
 
 function love.keypressed(key)
-    if gameState == "menu" then
+    if gameState == "mainmenu" then
+        local action = mainMenu:keypressed(key)
+        if action == "start" then
+            startGame(lastCharPath)
+            gameState = "running"
+        elseif action == "select" then
+            menu      = Menu.new()
+            gameState = "menu"
+        elseif action == "highscores" then
+            highscoresScreen = HighScoresScreen.new()
+            gameState        = "highscores"
+        elseif action == "options" then
+            optionsMenu = OptionsMenu.new(soundEnabled, musicEnabled)
+            gameState   = "options"
+        elseif action == "quit" then
+            love.event.quit()
+        end
+
+    elseif gameState == "menu" then
+        if key == "escape" then
+            gameState = "mainmenu"
+            return
+        end
         local chosen = menu:keypressed(key)
         if chosen then
+            lastCharPath = chosen
             startGame(chosen)
             gameState = "running"
+        end
+
+    elseif gameState == "options" then
+        local action = optionsMenu:keypressed(key)
+        if action == "sound_toggle" then
+            soundEnabled = optionsMenu.soundEnabled
+            love.audio.setVolume(soundEnabled and 1 or 0)
+        elseif action == "music_toggle" then
+            musicEnabled = optionsMenu.musicEnabled
+        elseif action == "back" then
+            gameState = "mainmenu"
+        end
+
+    elseif gameState == "highscores" then
+        local action = highscoresScreen:keypressed(key)
+        if action == "back" then
+            gameState = "mainmenu"
         end
 
     elseif gameState == "running" then
@@ -203,30 +277,64 @@ function love.keypressed(key)
         elseif action == "sound_toggle" then
             soundEnabled = pauseMenu.soundEnabled
             love.audio.setVolume(soundEnabled and 1 or 0)
-        elseif action == "quit" then
-            gameState = "menu"
-            menu      = Menu.new()
+        elseif action == "mainmenu" then
+            gameState = "mainmenu"
+        elseif action == "quit_game" then
+            love.event.quit()
         end
 
     elseif gameState == "gameover" then
-        if key == "escape" then love.event.quit() end
-        if key == "r" then
-            gameState = "menu"
-            menu      = Menu.new()
+        if key == "escape" or key == "r" then
+            gameState = "mainmenu"
         end
     end
 end
 
 function love.mousepressed(x, y, button)
-    if gameState == "menu" then
+    if gameState == "mainmenu" then
+        local action = mainMenu:mousepressed(x, y, button)
+        if action == "start" then
+            startGame(lastCharPath)
+            gameState = "running"
+        elseif action == "select" then
+            menu      = Menu.new()
+            gameState = "menu"
+        elseif action == "highscores" then
+            highscoresScreen = HighScoresScreen.new()
+            gameState        = "highscores"
+        elseif action == "options" then
+            optionsMenu = OptionsMenu.new(soundEnabled, musicEnabled)
+            gameState   = "options"
+        elseif action == "quit" then
+            love.event.quit()
+        end
+
+    elseif gameState == "menu" then
         local chosen = menu:mousepressed(x, y, button)
         if chosen then
+            lastCharPath = chosen
             startGame(chosen)
             gameState = "running"
         end
 
+    elseif gameState == "options" then
+        local action = optionsMenu:mousepressed(x, y, button)
+        if action == "sound_toggle" then
+            soundEnabled = optionsMenu.soundEnabled
+            love.audio.setVolume(soundEnabled and 1 or 0)
+        elseif action == "music_toggle" then
+            musicEnabled = optionsMenu.musicEnabled
+        elseif action == "back" then
+            gameState = "mainmenu"
+        end
+
+    elseif gameState == "highscores" then
+        local action = highscoresScreen:mousepressed(x, y, button)
+        if action == "back" then
+            gameState = "mainmenu"
+        end
+
     elseif gameState == "running" then
-        -- Pause button click
         if button == 1 then
             local bx, by, bw, bh = pauseBtnRect()
             if x >= bx and x <= bx + bw and y >= by and y <= by + bh then
@@ -243,10 +351,14 @@ function love.mousepressed(x, y, button)
         elseif action == "sound_toggle" then
             soundEnabled = pauseMenu.soundEnabled
             love.audio.setVolume(soundEnabled and 1 or 0)
-        elseif action == "quit" then
-            gameState = "menu"
-            menu      = Menu.new()
+        elseif action == "mainmenu" then
+            gameState = "mainmenu"
+        elseif action == "quit_game" then
+            love.event.quit()
         end
+
+    elseif gameState == "gameover" then
+        gameState = "mainmenu"
     end
 end
 
@@ -288,24 +400,79 @@ end
 
 -- ─── Drawing ──────────────────────────────────────────────────────────────────
 function love.draw()
-    if gameState == "menu" then
+    if gameState == "mainmenu" then
+        mainMenu:draw()
+        return
+    elseif gameState == "menu" then
         menu:draw()
+        return
+    elseif gameState == "options" then
+        optionsMenu:draw()
+        return
+    elseif gameState == "highscores" then
+        highscoresScreen:draw()
         return
     end
 
     drawWorld()
     drawHUD()
-    drawPauseBtn()
+
+    if gameState == "running" or gameState == "paused" then
+        drawPauseBtn()
+    end
 
     if gameState == "paused" then
         pauseMenu:draw()
     end
+
+    if IS_MOBILE and TouchInput and gameState == "running" then
+        love.graphics.push("all")
+        TouchInput.draw()
+        love.graphics.pop()
+    end
 end
 
 function love.mousemoved(x, y)
-    if gameState == "paused" then
+    if gameState == "mainmenu" then
+        mainMenu:mousemoved(x, y)
+    elseif gameState == "options" then
+        optionsMenu:mousemoved(x, y)
+    elseif gameState == "menu" then
+        -- char select has no hover tracking
+    elseif gameState == "paused" then
         pauseMenu:mousemoved(x, y)
     end
+end
+
+-- ─── Touch callbacks (Android / iOS) ─────────────────────────────────────────
+function love.touchpressed(id, x, y, dx, dy, pressure)
+    if not (IS_MOBILE and TouchInput) then return end
+    -- Scale from physical screen to logical 800×450 canvas
+    local sx = love.graphics.getWidth()  / SCREEN_W
+    local sy = love.graphics.getHeight() / SCREEN_H
+    local action = TouchInput.touchpressed(id, x / sx, y / sy)
+    if gameState == "running" then
+        if action == "jump" then
+            local jumped = player:keypressed("space")
+            if jumped then playSound(snd.jump) end
+        elseif action == "special" then
+            player:activateSpecial()
+        end
+    end
+end
+
+function love.touchreleased(id, x, y, dx, dy, pressure)
+    if not (IS_MOBILE and TouchInput) then return end
+    local sx = love.graphics.getWidth()  / SCREEN_W
+    local sy = love.graphics.getHeight() / SCREEN_H
+    TouchInput.touchreleased(id, x / sx, y / sy)
+end
+
+function love.touchmoved(id, x, y, dx, dy, pressure)
+    if not (IS_MOBILE and TouchInput) then return end
+    local sx = love.graphics.getWidth()  / SCREEN_W
+    local sy = love.graphics.getHeight() / SCREEN_H
+    TouchInput.touchmoved(id, x / sx, y / sy, dx / sx, dy / sy)
 end
 
 function drawHUD()
@@ -405,28 +572,90 @@ function drawHUD()
     -- Game over overlay
     if gameState == "gameover" then
         -- Semi-transparent backdrop
-        love.graphics.setColor(0, 0, 0, 0.55)
+        love.graphics.setColor(0, 0, 0, 0.70)
         love.graphics.rectangle("fill", 0, 0, SCREEN_W, SCREEN_H)
 
+        -- Title
         love.graphics.setFont(fontBig)
-        love.graphics.setColor(1, 0.2, 0.2, 1)
+        love.graphics.setColor(1, 0.22, 0.22, 1)
         local title = "GAME OVER"
-        love.graphics.print(title, (SCREEN_W - fontBig:getWidth(title)) / 2, SCREEN_H / 2 - 70)
+        love.graphics.print(title, (SCREEN_W - fontBig:getWidth(title)) / 2, 40)
 
+        -- Current run stats
         love.graphics.setFont(fontHUD)
         love.graphics.setColor(1, 1, 1, 1)
+        local runLine = "Score: " .. lastScore .. "     Dist: " .. lastDist .. " m"
+        love.graphics.print(runLine, (SCREEN_W - fontHUD:getWidth(runLine)) / 2, 92)
 
-        local lines = {
-            "Score:  " .. lastScore,
-            "Dist:   " .. lastDist .. " m",
-            "Best:   " .. highScore,
-            "",
-            "Press R to return to menu",
-        }
-        local yOff = SCREEN_H / 2 - 20
-        for _, ln in ipairs(lines) do
-            love.graphics.print(ln, (SCREEN_W - fontHUD:getWidth(ln)) / 2, yOff)
-            yOff = yOff + 22
+        -- Top-5 leaderboard
+        local all    = HighScores.getAll()
+        local top5   = math.min(#all, 5)
+        local panelX = 170
+        local rowH   = 24
+        local tableY = 128
+
+        -- Header
+        love.graphics.setColor(0.45, 0.45, 0.58, 1)
+        love.graphics.print("#",      panelX,       tableY)
+        love.graphics.print("CHAR",   panelX + 50,  tableY)
+        love.graphics.print("SCORE",  panelX + 210, tableY)
+        love.graphics.print("DIST",   panelX + 310, tableY)
+
+        -- Divider
+        love.graphics.setColor(0.30, 0.30, 0.50, 0.85)
+        love.graphics.setLineWidth(1)
+        love.graphics.line(panelX, tableY + 19, panelX + 400, tableY + 19)
+
+        for i = 1, top5 do
+            local e   = all[i]
+            local y   = tableY + 24 + (i - 1) * rowH
+            local col = HighScores.charColor(e.charPath)
+            local lbl = HighScores.charLabel(e.charPath)
+
+            -- Highlight the row that matches this run
+            local isThis = (e.score == lastScore and e.dist == lastDist
+                            and e.charPath == lastCharPath)
+            if isThis then
+                love.graphics.setColor(col[1], col[2], col[3], 0.12)
+                love.graphics.rectangle("fill", panelX - 4, y - 3, 408, rowH - 2, 3, 3)
+            end
+
+            -- Rank (medal colours)
+            if     i == 1 then love.graphics.setColor(1.00, 0.84, 0.10, 1)
+            elseif i == 2 then love.graphics.setColor(0.75, 0.75, 0.75, 1)
+            elseif i == 3 then love.graphics.setColor(0.80, 0.50, 0.20, 1)
+            else               love.graphics.setColor(0.50, 0.50, 0.58, 1)
+            end
+            love.graphics.print(i .. ".", panelX, y)
+
+            -- Character dot
+            love.graphics.setColor(col[1], col[2], col[3], 0.90)
+            love.graphics.circle("fill", panelX + 62, y + 8, 8)
+            love.graphics.setColor(0, 0, 0, 0.80)
+            local abbr = lbl:sub(1, 1)
+            love.graphics.print(abbr, panelX + 62 - fontHUD:getWidth(abbr) / 2, y)
+
+            -- Name
+            love.graphics.setColor(isThis and {1, 1, 0.55, 1} or {0.85, 0.85, 0.88, 1})
+            love.graphics.print(lbl, panelX + 76, y)
+
+            -- Score
+            love.graphics.setColor(1, 0.88, 0.45, 1)
+            love.graphics.print(tostring(e.score), panelX + 210, y)
+
+            -- Distance
+            love.graphics.setColor(0.65, 0.82, 1, 1)
+            love.graphics.print(e.dist .. " m", panelX + 310, y)
         end
+
+        -- Bottom hint (desktop only)
+        if not IS_MOBILE then
+            local hintY = tableY + 24 + top5 * rowH + 16
+            love.graphics.setColor(0.55, 0.55, 0.60, 0.90)
+            local hint = "Press R or Esc  --  Main Menu"
+            love.graphics.print(hint, (SCREEN_W - fontHUD:getWidth(hint)) / 2, hintY)
+        end
+
+        love.graphics.setColor(1, 1, 1, 1)
     end
 end

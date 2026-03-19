@@ -14,8 +14,8 @@ local PROFILES = {}
 -- Special: Speed Surge — 1.6x movement speed for 5 seconds.
 PROFILES["assets/Main Characters/Mask Dude/"] = {
     name          = "Mask Dude",
-    speed         = 130,
-    jumpVel       = -450,
+    speed         = 165,
+    jumpVel       = -360,
     favoriteFruit = "Apple.png",
     specialName   = "Speed Surge",
     specialDesc   = "1.6x speed  8s",
@@ -31,8 +31,8 @@ PROFILES["assets/Main Characters/Mask Dude/"] = {
 -- Special: Triple Jump — grants a third mid-air jump for 8 seconds.
 PROFILES["assets/Main Characters/Ninja Frog/"] = {
     name          = "Ninja Frog",
-    speed         = 150,
-    jumpVel       = -400,
+    speed         = 190,
+    jumpVel       = -320,
     favoriteFruit = "Kiwi.png",
     specialName   = "Triple Jump",
     specialDesc   = "3 jumps  12s",
@@ -49,8 +49,8 @@ PROFILES["assets/Main Characters/Ninja Frog/"] = {
 -- Special: Shield — full invincibility for 6 seconds.
 PROFILES["assets/Main Characters/Pink Man/"] = {
     name          = "Pink Man",
-    speed         = 105,
-    jumpVel       = -510,
+    speed         = 130,
+    jumpVel       = -410,
     favoriteFruit = "Strawberry.png",
     specialName   = "Shield",
     specialDesc   = "Invincible  10s",
@@ -66,8 +66,8 @@ PROFILES["assets/Main Characters/Pink Man/"] = {
 -- Special: Score Rush — 2× score multiplier for 10 seconds.
 PROFILES["assets/Main Characters/Virtual Guy/"] = {
     name          = "Virtual Guy",
-    speed         = 118,
-    jumpVel       = -470,
+    speed         = 148,
+    jumpVel       = -375,
     favoriteFruit = "Melon.png",
     specialName   = "Score Rush",
     specialDesc   = "2x score  15s",

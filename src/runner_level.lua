@@ -259,8 +259,8 @@ end
 function RunnerLevel:_pickTrap()
     local d    = self.difficulty
     local pool = { "spike" }
-    if d > 0.25 then pool[#pool+1] = "fire" end
-    if d > 0.0  then pool[#pool+1] = "saw"  end
+    if d > 0.0  then pool[#pool+1] = "fire" end
+    if d > 0.3  then pool[#pool+1] = "saw"  end
     return pool[math.random(1, #pool)]
 end
 
@@ -274,13 +274,14 @@ end
 
 function RunnerLevel:_spawnChunk()
     self.chunkCount = self.chunkCount + 1
-    self.difficulty = 1.0   -- TEST: max difficulty from the start
+    -- Difficulty ramps from 0 to 1 over the first 30 chunks, then stays at 1.
+    self.difficulty = math.min(1.0, (self.chunkCount - 1) / 30)
 
     local startCol     = self.nextStartCol
     self.nextStartCol  = startCol + CHUNK_W
 
     local d    = self.difficulty
-    local safe = (self.chunkCount <= 1)   -- TEST: safe zone shrunk to 1 chunk
+    local safe = (self.chunkCount <= 3)   -- first 3 chunks are obstacle-free
 
     local chunk = {
         startCol     = startCol,
@@ -405,8 +406,7 @@ function RunnerLevel:_spawnChunk()
         end
 
         -- Place 1–3 of the same trap type; saws capped at 1 due to their width.
-        -- Count is not scaled by difficulty — it is always random.
-        local count = (ttype == "saw") and 1 or math.random(3, 8)
+        local count = (ttype == "saw") and 1 or math.random(1, 3)
 
         for _ = 1, count do
             -- Try up to 6 random columns to find a free spot
@@ -428,7 +428,8 @@ function RunnerLevel:_spawnChunk()
                         wy = tileY(GROUND_ROW) - 16
                         table.insert(chunk.traps, Trap.new(ttype, wx, wy))
                     elseif ttype == "fire" then
-                        wy = tileY(GROUND_ROW) - 32
+                        -- Sprite is 16x32: bottom 16px = base (at floor), top 16px = flame (above floor)
+                        wy = tileY(GROUND_ROW) - 16
                         table.insert(chunk.traps, FireTrap.new(wx, wy))
                     elseif saw_axis == "v" then
                         wy = tileY(GROUND_ROW) / 2 - 19

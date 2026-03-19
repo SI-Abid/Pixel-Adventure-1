@@ -8,6 +8,11 @@ local CharProfiles = require("src.char_profiles")
 local Player = {}
 Player.__index = Player
 
+-- Touch input state injected by main.lua on Android/iOS.
+-- Expected shape: { left=bool, right=bool }
+local _touchInput = nil
+function Player.setTouchInput(state) _touchInput = state end
+
 local GRAVITY    = 800
 local MAX_FALL   = 600
 local HIT_DURATION = 1.5
@@ -190,8 +195,8 @@ function Player:update(dt, level)
     -- Horizontal input (blocked during hit)
     local inputX = 0
     if self.state ~= "hit" then
-        if love.keyboard.isDown("left",  "a") then inputX = -1 end
-        if love.keyboard.isDown("right", "d") then inputX =  1 end
+        if love.keyboard.isDown("left",  "a") or (_touchInput and _touchInput.left)  then inputX = -1 end
+        if love.keyboard.isDown("right", "d") or (_touchInput and _touchInput.right) then inputX =  1 end
     end
 
     self.vx = inputX * effectiveSpeed
@@ -297,15 +302,13 @@ function Player:draw()
     local anim   = self.anims[self.state]
     local scaleX = self.facingRight and 1 or -1
 
-    -- Blink during hit invincibility
+    -- Hit blink takes priority; speed tint only applies when not invincible
     if self.hitTimer > 0 then
         if math.floor(self.hitTimer / 0.1) % 2 == 0 then
             love.graphics.setColor(1, 1, 1, 0.4)
         end
-    end
-
-    -- Speed surge: slight yellow tint
-    if self.specialType == "speed" then
+    elseif self.specialType == "speed" then
+        -- Speed surge: slight yellow tint
         love.graphics.setColor(1, 1, 0.6, 1)
     end
 

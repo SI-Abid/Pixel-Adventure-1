@@ -8,11 +8,11 @@ local SCREEN_W = 800
 local SCREEN_H = 450
 
 local PANEL_W = 280
-local PANEL_H = 220
+local PANEL_H = 268
 local PANEL_X = (SCREEN_W - PANEL_W) / 2
 local PANEL_Y = (SCREEN_H - PANEL_H) / 2
 
-local ITEMS = { "Resume", "Sound", "Quit to Menu" }
+local ITEMS = { "Resume", "Sound", "Main Menu", "Quit Game" }
 local ITEM_H = 44
 
 local function itemRect(i)
@@ -38,7 +38,9 @@ function PauseMenu:keypressed(key)
         self.selected = (self.selected - 2) % #ITEMS + 1
     elseif key == "down" or key == "s" then
         self.selected = self.selected % #ITEMS + 1
-    elseif key == "return" or key == "space" or key == "escape" then
+    elseif key == "escape" then
+        return "resume"
+    elseif key == "return" or key == "space" then
         return self:_activate(self.selected)
     end
     return nil
@@ -73,7 +75,9 @@ function PauseMenu:_activate(i)
         self.soundEnabled = not self.soundEnabled
         return "sound_toggle"
     elseif i == 3 then
-        return "quit"
+        return "mainmenu"
+    elseif i == 4 then
+        return "quit_game"
     end
 end
 
@@ -135,7 +139,9 @@ function PauseMenu:draw()
             label = name
         end
 
-        if sel then
+        if name == "Quit Game" then
+            love.graphics.setColor(sel and {1, 0.4, 0.4, 1} or {0.7, 0.3, 0.3, 1})
+        elseif sel then
             love.graphics.setColor(1, 1, 1, 1)
         else
             love.graphics.setColor(0.7, 0.7, 0.7, 1)
