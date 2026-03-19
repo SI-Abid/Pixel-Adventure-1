@@ -15,17 +15,19 @@ end
 local Menu        = require("src.menu")
 local Player      = require("src.player")
 local RunnerLevel = require("src.runner_level")
+local PauseMenu   = require("src.pause_menu")
 
 local SCALE    = 2
 local SCREEN_W = 800
 local SCREEN_H = 450
-local DEBUG    = true   -- show hitboxes; set false to disable
+local DEBUG    = false  -- show hitboxes; set false to disable
 
 -- ─── State ────────────────────────────────────────────────────────────────────
-local gameState = "menu"   -- "menu" | "running" | "gameover"
+local gameState = "menu"   -- "menu" | "running" | "paused" | "gameover"
 local menu
 local player
 local level
+local pauseMenu
 local highScore = 0
 local lastScore = 0
 local lastDist  = 0
@@ -34,21 +36,38 @@ local lastDist  = 0
 local fontHUD
 local fontBig
 local heartImg
+local imgPause
+
+-- ─── Sound toggle ─────────────────────────────────────────────────────────────
+local soundEnabled  = true
+
+-- ─── Pause button (top-right, gameplay only) ──────────────────────────────────
+local PAUSE_BTN_SIZE = 32
+local PAUSE_BTN_PAD  = 8
+local PAUSE_BTN_Y    = 8
+
+local function pauseBtnRect()
+    local x = SCREEN_W - PAUSE_BTN_SIZE - PAUSE_BTN_PAD
+    local y = PAUSE_BTN_Y
+    return x, y, PAUSE_BTN_SIZE, PAUSE_BTN_SIZE
+end
+
 
 -- ─── Sounds ───────────────────────────────────────────────────────────────────
 local snd = {}
 
 -- ─── Helpers ──────────────────────────────────────────────────────────────────
 local function playSound(s)
-    if s then
+    if soundEnabled and s then
         s:stop()
         s:play()
     end
 end
 
 local function startGame(charPath)
-    level  = RunnerLevel.new()
-    player = Player.new(48, 128, charPath)
+    level     = RunnerLevel.new()
+    player    = Player.new(48, 128, charPath)
+    pauseMenu = PauseMenu.new(soundEnabled)
 end
 
 -- ─── Love callbacks ───────────────────────────────────────────────────────────
@@ -59,6 +78,9 @@ function love.load()
     fontBig  = love.graphics.newFont(32)
     heartImg = love.graphics.newImage("assets/heart.png")
     heartImg:setFilter("nearest", "nearest")
+
+    imgPause = love.graphics.newImage("assets/pause.png")
+    imgPause:setFilter("nearest", "nearest")
 
     -- Sounds
     local function tryLoad(path, kind)
@@ -80,6 +102,9 @@ function love.update(dt)
     if gameState == "menu" then
         menu:update(dt)
 
+    elseif gameState == "paused" then
+        -- world frozen; nothing to update
+
     elseif gameState == "running" then
         level:update(dt, player.x)
         player:update(dt, level)
@@ -97,7 +122,12 @@ function love.update(dt)
             enemy:update(dt, level, player.x, player.y)
             if enemy:checkCollision(px, py, pw, ph) then
                 local _, ey = enemy:getHitbox()
-                if player.vy > 0 and (py + ph) < (ey + 14) then
+                if player.specialActive and player.specialType == "shield" then
+                    -- Shield kill
+                    enemy:kill()
+                    player:addScore(20)
+                    playSound(snd.bounce)
+                elseif player.vy > 0 and (py + ph) < (ey + 14) then
                     -- Stomp kill
                     enemy:kill()
                     player.vy = -300
@@ -147,8 +177,6 @@ function love.update(dt)
 end
 
 function love.keypressed(key)
-    if key == "escape" then love.event.quit() end
-
     if gameState == "menu" then
         local chosen = menu:keypressed(key)
         if chosen then
@@ -157,13 +185,31 @@ function love.keypressed(key)
         end
 
     elseif gameState == "running" then
+        if key == "escape" or key == "p" then
+            pauseMenu.soundEnabled = soundEnabled
+            gameState = "paused"
+            return
+        end
         local jumped = player:keypressed(key)
         if jumped then playSound(snd.jump) end
         if key == "e" or key == "f" then
             player:activateSpecial()
         end
 
+    elseif gameState == "paused" then
+        local action = pauseMenu:keypressed(key)
+        if action == "resume" then
+            gameState = "running"
+        elseif action == "sound_toggle" then
+            soundEnabled = pauseMenu.soundEnabled
+            love.audio.setVolume(soundEnabled and 1 or 0)
+        elseif action == "quit" then
+            gameState = "menu"
+            menu      = Menu.new()
+        end
+
     elseif gameState == "gameover" then
+        if key == "escape" then love.event.quit() end
         if key == "r" then
             gameState = "menu"
             menu      = Menu.new()
@@ -178,17 +224,48 @@ function love.mousepressed(x, y, button)
             startGame(chosen)
             gameState = "running"
         end
+
+    elseif gameState == "running" then
+        -- Pause button click
+        if button == 1 then
+            local bx, by, bw, bh = pauseBtnRect()
+            if x >= bx and x <= bx + bw and y >= by and y <= by + bh then
+                pauseMenu.soundEnabled = soundEnabled
+                gameState = "paused"
+                return
+            end
+        end
+
+    elseif gameState == "paused" then
+        local action = pauseMenu:mousepressed(x, y, button)
+        if action == "resume" then
+            gameState = "running"
+        elseif action == "sound_toggle" then
+            soundEnabled = pauseMenu.soundEnabled
+            love.audio.setVolume(soundEnabled and 1 or 0)
+        elseif action == "quit" then
+            gameState = "menu"
+            menu      = Menu.new()
+        end
     end
 end
 
--- ─── Drawing ──────────────────────────────────────────────────────────────────
-function love.draw()
-    if gameState == "menu" then
-        menu:draw()
-        return
-    end
 
-    -- World (scaled + camera-translated)
+-- ─── Pause button (gameplay only) ─────────────────────────────────────────────
+local function drawPauseBtn()
+    local bx, by, bw, bh = pauseBtnRect()
+    love.graphics.setColor(0, 0, 0, 0.65)
+    love.graphics.rectangle("fill", bx - 3, by - 3, bw + 6, bh + 6, 5, 5)
+    love.graphics.setColor(0.55, 0.55, 0.55, 0.7)
+    love.graphics.rectangle("line", bx - 3, by - 3, bw + 6, bh + 6, 5, 5)
+    love.graphics.setColor(1, 1, 1, 1)
+    local iw = imgPause:getWidth()
+    local ih = imgPause:getHeight()
+    love.graphics.draw(imgPause, bx + (bw - iw) / 2, by + (bh - ih) / 2)
+end
+
+-- ─── Shared world draw ────────────────────────────────────────────────────────
+local function drawWorld()
     love.graphics.push()
     love.graphics.scale(SCALE, SCALE)
     love.graphics.translate(-level.camX, -level.camY)
@@ -206,11 +283,29 @@ function love.draw()
     end
 
     player:draw()
-
     love.graphics.pop()
+end
 
-    -- HUD (screen space)
+-- ─── Drawing ──────────────────────────────────────────────────────────────────
+function love.draw()
+    if gameState == "menu" then
+        menu:draw()
+        return
+    end
+
+    drawWorld()
     drawHUD()
+    drawPauseBtn()
+
+    if gameState == "paused" then
+        pauseMenu:draw()
+    end
+end
+
+function love.mousemoved(x, y)
+    if gameState == "paused" then
+        pauseMenu:mousemoved(x, y)
+    end
 end
 
 function drawHUD()
@@ -225,25 +320,25 @@ function drawHUD()
         love.graphics.draw(heartImg, 10 + (i - 1) * 20, 34, 0, 1, 1)
     end
 
-    -- Distance (top-right)
+    -- Distance (top-right, offset left to clear pause button)
     local dist = math.floor(player.x / 16)
     local dtxt = "Dist: " .. dist .. "m"
-    love.graphics.print(dtxt, SCREEN_W - fontHUD:getWidth(dtxt) - 10, 10)
+    love.graphics.print(dtxt, SCREEN_W - fontHUD:getWidth(dtxt) - 52, 10)
 
-    -- Difficulty bar (top-right below distance)
+    -- Difficulty bar (top-right below distance, offset left to clear pause button)
     if level then
         local d = level.difficulty
         love.graphics.setColor(0.2, 0.2, 0.2, 0.6)
-        love.graphics.rectangle("fill", SCREEN_W - 110, 32, 100, 8)
+        love.graphics.rectangle("fill", SCREEN_W - 155, 32, 100, 8)
         love.graphics.setColor(
             0.2 + 0.8 * d,
             0.8 - 0.6 * d,
             0.2,
             0.9
         )
-        love.graphics.rectangle("fill", SCREEN_W - 110, 32, 100 * d, 8)
+        love.graphics.rectangle("fill", SCREEN_W - 155, 32, 100 * d, 8)
         love.graphics.setColor(0.6, 0.6, 0.6, 0.5)
-        love.graphics.rectangle("line", SCREEN_W - 110, 32, 100, 8)
+        love.graphics.rectangle("line", SCREEN_W - 155, 32, 100, 8)
         love.graphics.setColor(1, 1, 1, 1)
     end
 
