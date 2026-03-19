@@ -18,10 +18,10 @@ PROFILES["assets/Main Characters/Mask Dude/"] = {
     jumpVel       = -450,
     favoriteFruit = "Apple.png",
     specialName   = "Speed Surge",
-    specialDesc   = "1.6x speed  5s",
+    specialDesc   = "1.6x speed  8s",
     specialFn     = function(player)
         player.specialActive = true
-        player.specialTimer  = 5.0
+        player.specialTimer  = 8.0
         player.specialType   = "speed"
     end,
 }
@@ -35,10 +35,10 @@ PROFILES["assets/Main Characters/Ninja Frog/"] = {
     jumpVel       = -400,
     favoriteFruit = "Kiwi.png",
     specialName   = "Triple Jump",
-    specialDesc   = "3 jumps  8s",
+    specialDesc   = "3 jumps  12s",
     specialFn     = function(player)
         player.specialActive = true
-        player.specialTimer  = 8.0
+        player.specialTimer  = 12.0
         player.specialType   = "triplejump"
         player.jumpsLeft     = 3
     end,
@@ -53,10 +53,10 @@ PROFILES["assets/Main Characters/Pink Man/"] = {
     jumpVel       = -510,
     favoriteFruit = "Strawberry.png",
     specialName   = "Shield",
-    specialDesc   = "Invincible  6s",
+    specialDesc   = "Invincible  10s",
     specialFn     = function(player)
         player.specialActive = true
-        player.specialTimer  = 6.0
+        player.specialTimer  = 10.0
         player.specialType   = "shield"
     end,
 }
@@ -70,10 +70,10 @@ PROFILES["assets/Main Characters/Virtual Guy/"] = {
     jumpVel       = -470,
     favoriteFruit = "Melon.png",
     specialName   = "Score Rush",
-    specialDesc   = "2x score  10s",
+    specialDesc   = "2x score  15s",
     specialFn     = function(player)
         player.specialActive   = true
-        player.specialTimer    = 10.0
+        player.specialTimer    = 15.0
         player.specialType     = "scorerush"
         player.scoreMultiplier = 2
     end,
