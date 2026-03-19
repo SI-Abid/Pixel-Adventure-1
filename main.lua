@@ -83,7 +83,7 @@ function love.update(dt)
 
         -- Enemies
         for _, enemy in ipairs(level:getEnemies()) do
-            enemy:update(dt, level)
+            enemy:update(dt, level, player.x)
             if enemy:checkCollision(px, py, pw, ph) then
                 local _, ey = enemy:getHitbox()
                 if player.vy > 0 and (py + ph) < (ey + 14) then

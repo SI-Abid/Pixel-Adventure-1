@@ -259,7 +259,7 @@ function RunnerLevel:_pickTrap()
     local d    = self.difficulty
     local pool = { "spike" }
     if d > 0.25 then pool[#pool+1] = "fire" end
-    if d > 0.55 then pool[#pool+1] = "saw"  end
+    if d > 0.0  then pool[#pool+1] = "saw"  end
     return pool[math.random(1, #pool)]
 end
 
@@ -267,7 +267,7 @@ function RunnerLevel:_pickEnemy()
     local d    = self.difficulty
     local pool = { Mushroom }
     if d > 0.30 then pool[#pool+1] = Chicken end
-    if d > 0.60 then pool[#pool+1] = Pig     end
+    if d > 0.0  then pool[#pool+1] = Pig     end
     return pool[math.random(1, #pool)]
 end
 
@@ -360,35 +360,74 @@ function RunnerLevel:_spawnChunk()
         table.insert(chunk.collectibles, self:_makeFruit(wx, wy))
     end
 
-    -- ── Random ground fruits (2 independent rolls) ───────────────────────────
+    -- ── Random ground fruits (2 rolls, no duplicate/trap-occupied columns) ──
+    -- usedGroundCols tracks every ground column claimed by a fruit or trap
+    -- so neither can overlap the other.
+    local usedGroundCols = {}
+    -- Block the column used by the platform fruit so fruits don't stack
+    if #chunk.collectibles > 0 then
+        local absC = math.floor(chunk.collectibles[1].x / TILE_SIZE) + 1
+        usedGroundCols[absC - startCol + 1] = true
+    end
+
     for _ = 1, 2 do
         if math.random() < 0.85 then
-            local fc = math.random(2, CHUNK_W - 2)
-            if not inGap(fc) then
-                local absCol = startCol + fc - 1
-                local wx     = tileX(absCol)
-                local wy     = tileY(GROUND_ROW) - 32
-                table.insert(chunk.collectibles, self:_makeFruit(wx, wy))
+            -- Try up to 5 times to land on a free, non-gap column
+            for _ = 1, 5 do
+                local fc = math.random(2, CHUNK_W - 2)
+                if not inGap(fc) and not usedGroundCols[fc] then
+                    usedGroundCols[fc] = true
+                    local absCol = startCol + fc - 1
+                    local wx     = tileX(absCol)
+                    local wy     = tileY(GROUND_ROW) - 32
+                    table.insert(chunk.collectibles, self:_makeFruit(wx, wy))
+                    break
+                end
             end
         end
     end
 
     -- ── Traps ─────────────────────────────────────────────────────────────────
+    -- How many tile-columns each trap sprite visually occupies.
+    -- saw is 38 px wide → ceil(38/16) = 3 tiles; spike/fire are 16 px → 1 tile.
+    local TRAP_TILE_SPAN = { spike = 1, fire = 1, saw = 3 }
+
     if not safe and math.random() < 0.12 + 0.30 * d then
-        local tc = math.random(2, CHUNK_W - 2)
-        if not inGap(tc) then
-            local ttype  = self:_pickTrap()
+        local tc    = math.random(2, CHUNK_W - 2)
+        local ttype = self:_pickTrap()
+        local span  = TRAP_TILE_SPAN[ttype] or 1
+
+        -- Check every column the sprite would cover
+        local canPlace = not inGap(tc)
+        for i = 0, span - 1 do
+            if usedGroundCols[tc + i] then canPlace = false break end
+        end
+
+        if canPlace then
+            for i = 0, span - 1 do usedGroundCols[tc + i] = true end
             local absCol = startCol + tc - 1
             local wx     = tileX(absCol)
             local wy
+            local saw_axis, saw_range
+
+            if ttype == "saw" then
+                -- Range scales 32→96 px with difficulty, snapped to 8 px (chain-tile size)
+                saw_range = math.floor((32 + d * 64) / 8) * 8
+                saw_axis  = (math.random() < 0.5) and "h" or "v"
+            end
+
             if ttype == "spike" then
                 wy = tileY(GROUND_ROW) - 16
             elseif ttype == "fire" then
                 wy = tileY(GROUND_ROW) - 32
-            else  -- saw
+            elseif saw_axis == "v" then
+                -- Centre the vertical saw at mid-air height; cy = ground_top/2
+                wy = tileY(GROUND_ROW) / 2 - 19
+            else  -- saw horizontal
                 wy = tileY(GROUND_ROW) - 38
             end
-            table.insert(chunk.traps, Trap.new(ttype, wx, wy))
+
+            table.insert(chunk.traps, Trap.new(ttype, wx, wy, saw_axis, saw_range))
         end
     end
 

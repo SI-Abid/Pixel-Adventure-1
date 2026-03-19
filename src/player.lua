@@ -83,8 +83,8 @@ function Player.new(x, y, charPath)
     self.specialDesc  = profile.specialDesc
 
     -- ── Power bar (0–100) ─────────────────────────────────────────────────
-    -- Fills only during fruit combos (2+ consecutive same fruit type).
-    -- Favourite fruit: +25/hit; others: +15/hit. Resets on type switch.
+    -- Favourite fruit: +25/hit immediately (no combo needed).
+    -- Other fruits: +15/hit only during combo (2+ consecutive same type).
     self.powerBar      = 0
     self.lastFruitType = nil
     self.comboCount    = 0
@@ -124,9 +124,11 @@ function Player:collectFruit(fruitType, baseValue)
         self.lastFruitType = fruitType
     end
 
-    -- Power bar only fills when combo is active (2nd fruit onward)
-    if self.comboCount >= 2 then
-        local fill = (fruitType == self.favoriteFruit) and 25 or 15
+    -- Favourite fruit fills the bar immediately (no combo needed).
+    -- Other fruits only fill once a combo is active (2nd+ consecutive).
+    local isFav = (fruitType == self.favoriteFruit)
+    if isFav or self.comboCount >= 2 then
+        local fill = isFav and 25 or 15
         self.powerBar = math.min(100, self.powerBar + fill)
     end
 
