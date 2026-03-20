@@ -499,6 +499,16 @@ function love.touchpressed(id, x, y, dx, dy, pressure)
         return
     end
 
+    -- Pause button: check before routing to touch controls
+    do
+        local bx, by, bw, bh = pauseBtnRect()
+        if lx >= bx and lx <= bx + bw and ly >= by and ly <= by + bh then
+            pauseMenu.soundEnabled = soundEnabled
+            gameState = "paused"
+            return
+        end
+    end
+
     if not TouchInput then return end
     local action = TouchInput.touchpressed(id, lx, ly)
     if action == "jump" then
