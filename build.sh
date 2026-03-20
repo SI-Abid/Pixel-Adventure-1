@@ -13,7 +13,7 @@ set -euo pipefail
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 GAME_NAME="PixelAdventure"
-VERSION="1.0.0"
+VERSION="1.0.2"
 LOVE_VERSION="11.4"
 LOVE_APPIMAGE_URL="https://github.com/love2d/love/releases/download/${LOVE_VERSION}/love-${LOVE_VERSION}-x86_64.AppImage"
 APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
